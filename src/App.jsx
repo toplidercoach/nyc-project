@@ -188,6 +188,25 @@ const EVENTS = [
   { date:"Cada noche", cat:"😂", name:"Comedy Cellar", where:"MacDougal St", price:"desde $15", tip:"Mejor comedia de NY", lat:40.7303, lng:-74.0004 },
 ];
 
+// Categorías y SOS de la sección Documentos
+const DOC_CATS = [
+  { id:"flight",  l:"Vuelos",       icon:"✈️", c:C.blue },
+  { id:"stay",    l:"Alojamiento",  icon:"🏠", c:C.gold },
+  { id:"insur",   l:"Seguros",      icon:"🛡️", c:C.green },
+  { id:"id",      l:"Identidad",    icon:"🛂", c:C.purple },
+  { id:"wcup",    l:"Mundial",      icon:"⚽", c:C.red },
+  { id:"other",   l:"Otros",        icon:"🎫", c:C.muted },
+];
+
+const SOS_PHONES = [
+  { name:"Emergencias EE.UU.",          phone:"911",            note:"Policía, ambulancia, bomberos", c:C.red },
+  { name:"Seguro IMAWAY (24h)",         phone:"+34 913 907 318", note:"Asistencia médica · Póliza 250002H5", c:C.green },
+  { name:"Seguro IMAWAY (WhatsApp)",    phone:"+34 913 907 390", note:"Mensajes y consultas", c:C.green },
+  { name:"Embajada España (Washington)",phone:"+1 202 452 0100", note:"Asistencia consular general", c:C.gold },
+  { name:"Consulado España (NY)",       phone:"+1 212 355 4080", note:"150 E 58th St, Manhattan", c:C.gold },
+  { name:"Iberia (USA)",                phone:"+1 800 772 4642", note:"Cambios y problemas con vuelos", c:C.blue },
+];
+
 // ═══════════════════════════════════════════
 // 🏠 HOME TAB
 // ═══════════════════════════════════════════
@@ -247,10 +266,10 @@ function CalendarTab({ gps }) {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ t:"", s:"09:00", e:"11:00", c:C.accent });
-  const [moving, setMoving] = useState(null); // id of event being moved
+  const [moving, setMoving] = useState(null);
   const [showIdeas, setShowIdeas] = useState(false);
   const [ideaText, setIdeaText] = useState("");
-  const [scheduleIdea, setScheduleIdea] = useState(null); // idea index being scheduled
+  const [scheduleIdea, setScheduleIdea] = useState(null);
 
   useEffect(() => { S.set("cal2", events); }, [events]);
   useEffect(() => { S.set("ideas", ideas); }, [ideas]);
@@ -281,19 +300,16 @@ function CalendarTab({ gps }) {
 
   const cancel = () => { setAdding(false); setEditing(null); setForm({ t:"", s:"09:00", e:"11:00", c:C.accent }); };
 
-  // Move event to another day
   const moveToDay = (evId, targetDay) => {
     setEvents(events.map(ev => ev.id === evId ? { ...ev, day: targetDay } : ev));
     setMoving(null);
   };
 
-  // Send event to ideas (unschedule)
   const sendToIdeas = (ev) => {
     setIdeas([...ideas, { id: nextId, t: ev.t, c: ev.c || C.accent, from: DAY_LABELS[ev.day] }]);
     setEvents(events.filter(x => x.id !== ev.id));
   };
 
-  // Schedule idea to current day
   const scheduleIdeaToDay = (ideaIdx, targetDay) => {
     const idea = ideas[ideaIdx];
     setEvents([...events, { id: nextId, day: targetDay, t: idea.t, s:"10:00", e:"11:30", c: idea.c || C.gold }]);
@@ -301,7 +317,6 @@ function CalendarTab({ gps }) {
     setScheduleIdea(null);
   };
 
-  // Add idea
   const addIdea = () => {
     if (!ideaText.trim()) return;
     setIdeas([...ideas, { id: nextId, t: ideaText.trim(), c: C.gold }]);
@@ -318,7 +333,6 @@ function CalendarTab({ gps }) {
     <div style={{ padding: "12px 14px" }}>
       <Title sub="Toca para editar · 📦 mover día · 💡 ideas pendientes">📅 Calendario editable</Title>
 
-      {/* Day selector strip */}
       <div style={{ display:"flex", gap:3, overflowX:"auto", paddingBottom:8, marginBottom:8 }}>
         {DAY_LABELS.map((d,i) => {
           const hasEvts = events.some(ev => ev.day === i);
@@ -331,7 +345,6 @@ function CalendarTab({ gps }) {
         })}
       </div>
 
-      {/* Day title + ideas toggle */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
         <div style={{ fontSize:15, fontWeight:800 }}>{DAY_TITLES[day]} · {DAY_LABELS[day]}</div>
         <button onClick={() => setShowIdeas(!showIdeas)} style={{
@@ -343,7 +356,6 @@ function CalendarTab({ gps }) {
         </button>
       </div>
 
-      {/* IDEAS / PENDIENTES PANEL */}
       {showIdeas && (
         <Card style={{ borderColor:`${C.gold}40`, marginBottom:10, background:`${C.gold}06` }}>
           <div style={{ fontSize:12, fontWeight:800, color:C.gold, marginBottom:6 }}>💡 Ideas y Pendientes</div>
@@ -359,7 +371,6 @@ function CalendarTab({ gps }) {
                 <button onClick={() => setScheduleIdea(scheduleIdea === idx ? null : idx)} title="Programar" style={{ background:"none", border:"none", fontSize:13, cursor:"pointer", padding:"0 2px" }}>📅</button>
                 <button onClick={() => setIdeas(ideas.filter((_,i) => i !== idx))} title="Borrar" style={{ background:"none", border:"none", fontSize:11, cursor:"pointer", color:C.red, opacity:0.5, padding:"0 2px" }}>✕</button>
               </div>
-              {/* Day picker for scheduling this idea */}
               {scheduleIdea === idx && (
                 <div style={{ display:"flex", gap:3, flexWrap:"wrap", padding:"6px 4px", background:`${C.accent}08`, borderRadius:"0 0 6px 6px", marginTop:1 }}>
                   <span style={{ fontSize:9, color:C.muted, width:"100%", marginBottom:2 }}>Mover a:</span>
@@ -374,7 +385,6 @@ function CalendarTab({ gps }) {
             </div>
           ))}
 
-          {/* Add idea input */}
           <div style={{ display:"flex", gap:4, marginTop:6 }}>
             <input style={{ ...inputStyle, flex:1, fontSize:12 }} placeholder="Ej: Dakota Building (Lennon), café Birch..." value={ideaText} onChange={e => setIdeaText(e.target.value)} onKeyDown={e => e.key === "Enter" && addIdea()} />
             <button onClick={addIdea} style={{ padding:"8px 14px", borderRadius:8, border:"none", background:C.gold, color:"#000", fontWeight:700, fontSize:12, cursor:"pointer" }}>+</button>
@@ -382,7 +392,6 @@ function CalendarTab({ gps }) {
         </Card>
       )}
 
-      {/* EVENT LIST */}
       {dayEvt.length === 0 && <div style={{ fontSize:12, color:C.muted, textAlign:"center", padding:20 }}>Sin eventos. Pulsa ➕</div>}
 
       {dayEvt.map(ev => {
@@ -401,7 +410,6 @@ function CalendarTab({ gps }) {
                 <div style={{ fontSize:13, fontWeight:600, paddingRight:ev.f?18:50 }}>{ev.t}</div>
                 {hasOverlap && <span style={{ fontSize:9, color:C.red }}>⚠️ Solapamiento</span>}
                 {ev.lat && <DistBadge lat={ev.lat} lng={ev.lng} gps={gps} />}
-                {/* Action buttons for non-fixed events */}
                 {!ev.f && (
                   <div style={{ position:"absolute", top:5, right:5, display:"flex", gap:2 }}>
                     <button onClick={(e) => { e.stopPropagation(); setMoving(isMoving ? null : ev.id); }} title="Mover día" style={{ background:"none", border:"none", fontSize:11, cursor:"pointer", opacity:0.6, padding:"0 2px" }}>📦</button>
@@ -412,7 +420,6 @@ function CalendarTab({ gps }) {
                 {ev.f && <span style={{ position:"absolute", top:6, right:6, fontSize:8, color:C.muted }}>🔒</span>}
               </div>
             </div>
-            {/* Move-to-day picker */}
             {isMoving && (
               <div style={{ marginLeft:54, display:"flex", gap:3, flexWrap:"wrap", padding:"6px 6px", background:`${C.blue}10`, borderRadius:"0 0 8px 8px", marginTop:1, borderLeft:`3px solid ${C.blue}` }}>
                 <span style={{ fontSize:9, color:C.muted, width:"100%" }}>📦 Mover a:</span>
@@ -434,7 +441,6 @@ function CalendarTab({ gps }) {
         );
       })}
 
-      {/* Add event button / form */}
       {!adding ? (
         <button onClick={() => { setAdding(true); setEditing(null); setMoving(null); setForm({ t:"", s:"09:00", e:"11:00", c:C.accent }); }} style={{ width:"100%", padding:12, borderRadius:10, border:`1px dashed ${C.accent}50`, background:"transparent", color:C.accent, fontSize:13, fontWeight:700, cursor:"pointer", marginTop:8 }}>➕ Añadir evento</button>
       ) : (
@@ -516,7 +522,6 @@ function MoviesTab({ gps }) {
               <span style={{ fontSize:10, color:allDone(m.i)?C.green:C.muted, fontWeight:700 }}>{countDone(m.i)}/5</span>
             </div>
 
-            {/* Traveler checks */}
             <div style={{ display:"flex", gap:5, marginTop:8 }} onClick={e => e.stopPropagation()}>
               {TRAVELERS.map(t => {
                 const on = checks[`${m.i}-${t.id}`];
@@ -630,7 +635,6 @@ function AITab() {
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState("chat");
   const [apiKey, setApiKey] = useState(() => S.get("apikey") || "");
-  const [showKey, setShowKey] = useState(false);
   const ref = useRef(null);
   const hasKey = apiKey && apiKey.length > 10;
 
@@ -715,6 +719,212 @@ function AITab() {
 }
 
 // ═══════════════════════════════════════════
+// 📁 DOCS SUB-TAB (dentro de Control)
+// ═══════════════════════════════════════════
+function DocsSubTab() {
+  const [docs, setDocs] = useState(() => S.get("docs") || []);
+  const [filter, setFilter] = useState("all");
+  const [showSos, setShowSos] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({ name:"", url:"", cat:"flight", type:"PDF", note:"" });
+
+  useEffect(() => { S.set("docs", docs); }, [docs]);
+
+  const nextId = Math.max(0, ...docs.map(d => d.id || 0)) + 1;
+
+  const resetForm = () => setForm({ name:"", url:"", cat:"flight", type:"PDF", note:"" });
+
+  const startAdd = () => { resetForm(); setEditing(null); setAdding(true); };
+  const startEdit = (doc) => {
+    setForm({ name:doc.name, url:doc.url, cat:doc.cat, type:doc.type, note:doc.note||"" });
+    setEditing(doc.id);
+    setAdding(true);
+  };
+  const cancel = () => { setAdding(false); setEditing(null); resetForm(); };
+
+  const save = () => {
+    if (!form.name.trim() || !form.url.trim()) return;
+    if (editing !== null) {
+      setDocs(docs.map(d => d.id === editing ? { ...d, ...form } : d));
+    } else {
+      setDocs([...docs, { ...form, id:nextId, checks:{} }]);
+    }
+    setAdding(false);
+    setEditing(null);
+    resetForm();
+  };
+
+  const remove = (id) => setDocs(docs.filter(d => d.id !== id));
+
+  const toggleCheck = (docId, travId) => {
+    setDocs(docs.map(d => {
+      if (d.id !== docId) return d;
+      const nc = { ...(d.checks||{}) };
+      nc[travId] = !nc[travId];
+      return { ...d, checks:nc };
+    }));
+  };
+
+  const filtered = docs.filter(d => filter === "all" || d.cat === filter);
+  const catInfo = (id) => DOC_CATS.find(c => c.id === id) || DOC_CATS[5];
+
+  return (
+    <>
+      {/* SOS PHONES */}
+      <Card style={{ background:`${C.red}08`, borderColor:`${C.red}30`, marginBottom:10 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", cursor:"pointer" }} onClick={() => setShowSos(!showSos)}>
+          <div style={{ fontSize:13, fontWeight:800, color:C.red }}>🆘 Teléfonos de emergencia</div>
+          <span style={{ fontSize:11, color:C.muted }}>{showSos ? "▲" : "▼"}</span>
+        </div>
+        {showSos && (
+          <div style={{ marginTop:8 }}>
+            {SOS_PHONES.map((s,i) => (
+              <a key={i} href={`tel:${s.phone.replace(/\s/g, "")}`} style={{ display:"block", textDecoration:"none", color:"inherit", marginBottom:5 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"7px 9px", background:C.card, borderRadius:7, borderLeft:`3px solid ${s.c}` }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:12, fontWeight:700, color:C.text }}>{s.name}</div>
+                    <div style={{ fontSize:10, color:C.muted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.note}</div>
+                  </div>
+                  <div style={{ fontSize:12, fontWeight:700, color:s.c, marginLeft:8, whiteSpace:"nowrap" }}>📞 {s.phone}</div>
+                </div>
+              </a>
+            ))}
+            <div style={{ fontSize:9, color:C.muted, marginTop:6, textAlign:"center" }}>Toca cualquiera para llamar 📱</div>
+          </div>
+        )}
+      </Card>
+
+      {/* TITLE + EXPLANATION */}
+      <div style={{ marginBottom:10 }}>
+        <div style={{ fontSize:14, fontWeight:800 }}>📁 Documentos del viaje</div>
+        <div style={{ fontSize:10, color:C.muted, marginTop:2 }}>Pega enlaces de Drive/Dropbox a tus PDFs e imágenes. Marca quién los tiene descargados.</div>
+      </div>
+
+      {/* CATEGORY FILTERS */}
+      <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:10 }}>
+        <button onClick={() => setFilter("all")} style={{ padding:"4px 8px", borderRadius:14, border:`1px solid ${filter==="all"?C.accent:C.border}`, background:filter==="all"?`${C.accent}18`:"transparent", color:filter==="all"?C.accent:C.muted, fontSize:10, fontWeight:600, cursor:"pointer" }}>Todos {docs.length > 0 && `(${docs.length})`}</button>
+        {DOC_CATS.map(c => {
+          const count = docs.filter(d => d.cat === c.id).length;
+          return (
+            <button key={c.id} onClick={() => setFilter(c.id)} style={{ padding:"4px 8px", borderRadius:14, border:`1px solid ${filter===c.id?c.c:C.border}`, background:filter===c.id?`${c.c}18`:"transparent", color:filter===c.id?c.c:C.muted, fontSize:10, fontWeight:600, cursor:"pointer" }}>
+              {c.icon} {c.l}{count > 0 && ` (${count})`}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* EMPTY STATE */}
+      {filtered.length === 0 && !adding && (
+        <div style={{ textAlign:"center", padding:"24px 12px", color:C.muted, fontSize:12, background:C.card, borderRadius:10, border:`1px dashed ${C.border}`, marginBottom:10 }}>
+          {docs.length === 0 ? (
+            <>📋 Ningún documento todavía<br/><span style={{ fontSize:10 }}>Pulsa ➕ para añadir el primero</span></>
+          ) : (
+            <>Sin documentos en esta categoría</>
+          )}
+        </div>
+      )}
+
+      {/* DOCS LIST */}
+      {filtered.map(d => {
+        const ci = catInfo(d.cat);
+        const checks = d.checks || {};
+        const countChk = TRAVELERS.filter(t => checks[t.id]).length;
+        return (
+          <Card key={d.id} style={{ borderLeft:`3px solid ${ci.c}` }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:13, fontWeight:700 }}>{ci.icon} {d.name}</div>
+                <div style={{ display:"flex", gap:4, alignItems:"center", marginTop:3, flexWrap:"wrap" }}>
+                  <Badge c={ci.c}>{ci.l}</Badge>
+                  <Badge c={d.type === "PDF" ? C.red : C.purple}>{d.type === "PDF" ? "📄 PDF" : "🖼️ Imagen"}</Badge>
+                  <span style={{ fontSize:9, color:C.muted }}>{countChk}/5 descargado</span>
+                </div>
+                {d.note && <div style={{ fontSize:11, color:C.muted, marginTop:4 }}>💡 {d.note}</div>}
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div style={{ display:"flex", gap:6, marginTop:8 }}>
+              <a href={d.url} target="_blank" rel="noopener noreferrer" style={{ flex:1, textDecoration:"none" }}>
+                <button style={{ width:"100%", padding:"7px", borderRadius:7, border:"none", background:ci.c, color:"#fff", fontSize:11, fontWeight:700, cursor:"pointer" }}>🔗 Abrir</button>
+              </a>
+              <button onClick={() => startEdit(d)} style={{ padding:"7px 10px", borderRadius:7, border:`1px solid ${C.border}`, background:"transparent", color:C.muted, fontSize:11, cursor:"pointer" }}>✏️</button>
+              <button onClick={() => { if (confirm(`¿Borrar "${d.name}"?`)) remove(d.id); }} style={{ padding:"7px 10px", borderRadius:7, border:`1px solid ${C.red}30`, background:`${C.red}08`, color:C.red, fontSize:11, cursor:"pointer" }}>🗑️</button>
+            </div>
+
+            {/* Traveler checks */}
+            <div style={{ marginTop:8, paddingTop:8, borderTop:`1px solid ${C.border}` }}>
+              <div style={{ fontSize:9, color:C.muted, marginBottom:4 }}>¿Quién lo tiene descargado?</div>
+              <div style={{ display:"flex", gap:5 }}>
+                {TRAVELERS.map(t => {
+                  const on = checks[t.id];
+                  return (
+                    <button key={t.id} onClick={() => toggleCheck(d.id, t.id)} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:1, padding:"3px 5px", borderRadius:7, border:`1px solid ${on?C.green:C.border}`, background:on?`${C.green}12`:"transparent", cursor:"pointer", minWidth:38 }}>
+                      <span style={{ fontSize:15 }}>{t.icon}</span>
+                      <span style={{ fontSize:7, color:on?C.green:C.muted, fontWeight:700 }}>{on ? "✓" : t.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </Card>
+        );
+      })}
+
+      {/* ADD/EDIT FORM */}
+      {!adding ? (
+        <button onClick={startAdd} style={{ width:"100%", padding:12, borderRadius:10, border:`1px dashed ${C.accent}50`, background:"transparent", color:C.accent, fontSize:13, fontWeight:700, cursor:"pointer", marginTop:8 }}>➕ Añadir documento</button>
+      ) : (
+        <Card style={{ borderColor:`${C.accent}50`, marginTop:8 }}>
+          <div style={{ fontSize:11, fontWeight:700, color:C.accent, marginBottom:8 }}>{editing !== null ? "✏️ Editando documento" : "➕ Nuevo documento"}</div>
+
+          <label style={{ fontSize:10, color:C.muted, display:"block", marginBottom:2 }}>Nombre</label>
+          <input style={{ ...inputStyle, marginBottom:8 }} placeholder="Ej: Tarjeta embarque Miguel" value={form.name} onChange={e => setForm({...form, name:e.target.value})} autoFocus />
+
+          <label style={{ fontSize:10, color:C.muted, display:"block", marginBottom:2 }}>Enlace (Google Drive, Dropbox, etc.)</label>
+          <input style={{ ...inputStyle, marginBottom:8 }} placeholder="https://drive.google.com/..." value={form.url} onChange={e => setForm({...form, url:e.target.value})} />
+
+          <label style={{ fontSize:10, color:C.muted, display:"block", marginBottom:4 }}>Categoría</label>
+          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:10 }}>
+            {DOC_CATS.map(c => (
+              <button key={c.id} onClick={() => setForm({...form, cat:c.id})} style={{ padding:"5px 9px", borderRadius:7, border:`1px solid ${form.cat===c.id?c.c:C.border}`, background:form.cat===c.id?`${c.c}20`:"transparent", color:form.cat===c.id?c.c:C.muted, fontSize:10, fontWeight:700, cursor:"pointer" }}>
+                {c.icon} {c.l}
+              </button>
+            ))}
+          </div>
+
+          <label style={{ fontSize:10, color:C.muted, display:"block", marginBottom:4 }}>Tipo</label>
+          <div style={{ display:"flex", gap:6, marginBottom:10 }}>
+            {[["PDF","📄 PDF",C.red],["IMG","🖼️ Imagen",C.purple]].map(([k,l,col]) => (
+              <button key={k} onClick={() => setForm({...form, type:k})} style={{ flex:1, padding:"7px", borderRadius:7, border:`1px solid ${form.type===k?col:C.border}`, background:form.type===k?`${col}15`:"transparent", color:form.type===k?col:C.muted, fontSize:11, fontWeight:700, cursor:"pointer" }}>{l}</button>
+            ))}
+          </div>
+
+          <label style={{ fontSize:10, color:C.muted, display:"block", marginBottom:2 }}>Nota (opcional)</label>
+          <input style={{ ...inputStyle, marginBottom:10 }} placeholder="Ej: caduca el 12/2030, número de póliza..." value={form.note} onChange={e => setForm({...form, note:e.target.value})} />
+
+          <div style={{ display:"flex", gap:6 }}>
+            <button onClick={save} style={{ flex:1, padding:10, borderRadius:8, border:"none", background:C.accent, color:"#fff", fontWeight:700, cursor:"pointer" }}>{editing !== null ? "Guardar cambios" : "Añadir"}</button>
+            <button onClick={cancel} style={{ padding:"10px 16px", borderRadius:8, border:`1px solid ${C.border}`, background:"transparent", color:C.muted, cursor:"pointer" }}>Cancelar</button>
+          </div>
+        </Card>
+      )}
+
+      {/* HELP TIP */}
+      <Card style={{ background:`${C.blue}08`, borderColor:`${C.blue}25`, marginTop:10 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:C.blue, marginBottom:4 }}>💡 Cómo conseguir el enlace</div>
+        <div style={{ fontSize:10, color:C.muted, lineHeight:1.6 }}>
+          <b style={{ color:C.text }}>Google Drive:</b> sube el archivo → clic derecho → Compartir → "Cualquiera con el enlace" → Copiar.<br/>
+          <b style={{ color:C.text }}>Dropbox:</b> clic derecho sobre el archivo → "Copiar enlace".<br/>
+          ⚠️ Solo comparte estos enlaces con tus acompañantes de viaje.
+        </div>
+      </Card>
+    </>
+  );
+}
+
+// ═══════════════════════════════════════════
 // 💰 CONTROL TAB
 // ═══════════════════════════════════════════
 function ControlTab() {
@@ -746,9 +956,9 @@ function ControlTab() {
 
   return (
     <div>
-      <div style={{ display:"flex", gap:4, padding:"10px 14px 6px", background:C.bg2 }}>
-        {[["budget","💰 Gastos"],["check","✅ Check"],["notes","📝 Notas"]].map(([k,l]) => (
-          <button key={k} onClick={() => setSub(k)} style={{ flex:1, padding:"7px", borderRadius:8, border:`1px solid ${sub===k?C.accent:C.border}`, background:sub===k?`${C.accent}18`:"transparent", color:sub===k?C.accent:C.muted, fontSize:11, fontWeight:700, cursor:"pointer" }}>{l}</button>
+      <div style={{ display:"flex", gap:4, padding:"10px 14px 6px", background:C.bg2, overflowX:"auto" }}>
+        {[["budget","💰 Gastos"],["check","✅ Check"],["notes","📝 Notas"],["docs","📁 Docs"]].map(([k,l]) => (
+          <button key={k} onClick={() => setSub(k)} style={{ flex:"1 1 0", minWidth:70, padding:"7px", borderRadius:8, border:`1px solid ${sub===k?C.accent:C.border}`, background:sub===k?`${C.accent}18`:"transparent", color:sub===k?C.accent:C.muted, fontSize:10, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>{l}</button>
         ))}
       </div>
       <div style={{ padding:"12px 14px" }}>
@@ -799,6 +1009,7 @@ function ControlTab() {
         {sub === "notes" && (
           <Card><textarea style={{ ...inputStyle, minHeight:250, resize:"vertical", lineHeight:1.6 }} placeholder="Notas, ideas, links..." value={notes} onChange={e => setNotes(e.target.value)} /></Card>
         )}
+        {sub === "docs" && <DocsSubTab />}
       </div>
     </div>
   );
@@ -808,65 +1019,53 @@ function ControlTab() {
 // WORLD CUP TAB
 // ═══════════════════════════════════════════
 const WC_MATCHES = [
-  // June 20 (Sáb) - DÍA DE LLEGADA
   { d:"20 Jun", dow:"Sáb", h:"13:00", esp:"19:00", a:"🇳🇱 Países Bajos", b:"UEFA Playoff B", g:"F", v:"Houston", ml:false, sp:false },
   { d:"20 Jun", dow:"Sáb", h:"16:00", esp:"22:00", a:"🇩🇪 Alemania", b:"🇨🇮 Costa de Marfil", g:"E", v:"Toronto", ml:false, sp:false },
   { d:"20 Jun", dow:"Sáb", h:"20:00", esp:"02:00+1", a:"🇪🇨 Ecuador", b:"🇨🇼 Curaçao", g:"E", v:"Kansas City", ml:false, sp:false },
   { d:"20 Jun", dow:"Sáb", h:"00:00+1", esp:"06:00+1", a:"🇹🇳 Túnez", b:"🇯🇵 Japón", g:"F", v:"Monterrey 🇲🇽", ml:false, sp:false },
-  // June 21 (Dom)
   { d:"21 Jun", dow:"Dom", h:"12:00", esp:"18:00", a:"🇪🇸 ESPAÑA", b:"🇸🇦 Arabia Saudí", g:"H", v:"Atlanta", ml:false, sp:true },
   { d:"21 Jun", dow:"Dom", h:"15:00", esp:"21:00", a:"🇧🇪 Bélgica", b:"🇮🇷 Irán", g:"G", v:"Los Ángeles", ml:false, sp:false },
   { d:"21 Jun", dow:"Dom", h:"18:00", esp:"00:00+1", a:"🇺🇾 Uruguay", b:"🇨🇻 Cabo Verde", g:"H", v:"Miami", ml:false, sp:false },
   { d:"21 Jun", dow:"Dom", h:"21:00", esp:"03:00+1", a:"🇳🇿 N. Zelanda", b:"🇪🇬 Egipto", g:"G", v:"Vancouver 🇨🇦", ml:false, sp:false },
-  // June 22 (Lun)
   { d:"22 Jun", dow:"Lun", h:"13:00", esp:"19:00", a:"🇦🇷 Argentina", b:"🇦🇹 Austria", g:"J", v:"Dallas", ml:false, sp:false },
   { d:"22 Jun", dow:"Lun", h:"17:00", esp:"23:00", a:"🇫🇷 Francia", b:"IC Playoff 2", g:"I", v:"Philadelphia", ml:false, sp:false },
   { d:"22 Jun", dow:"Lun", h:"20:00", esp:"02:00+1", a:"🇳🇴 Noruega", b:"🇸🇳 Senegal", g:"I", v:"🏟️ MetLife", ml:true, sp:false },
   { d:"22 Jun", dow:"Lun", h:"23:00", esp:"05:00+1", a:"🇯🇴 Jordania", b:"🇩🇿 Argelia", g:"J", v:"San Francisco", ml:false, sp:false },
-  // June 23 (Mar)
   { d:"23 Jun", dow:"Mar", h:"13:00", esp:"19:00", a:"🇵🇹 Portugal", b:"🇺🇿 Uzbekistán", g:"K", v:"Houston", ml:false, sp:false },
   { d:"23 Jun", dow:"Mar", h:"16:00", esp:"22:00", a:"🏴󠁧󠁢󠁥󠁮󠁧󠁿 Inglaterra", b:"🇬🇭 Ghana", g:"L", v:"Boston", ml:false, sp:false },
   { d:"23 Jun", dow:"Mar", h:"19:00", esp:"01:00+1", a:"🇵🇦 Panamá", b:"🇭🇷 Croacia", g:"L", v:"Toronto", ml:false, sp:false },
   { d:"23 Jun", dow:"Mar", h:"22:00", esp:"04:00+1", a:"🇨🇴 Colombia", b:"IC Playoff 1", g:"K", v:"Guadalajara 🇲🇽", ml:false, sp:false },
-  // June 24 (Mié)
   { d:"24 Jun", dow:"Mié", h:"15:00", esp:"21:00", a:"🇨🇭 Suiza", b:"🇨🇦 Canadá", g:"B", v:"Vancouver 🇨🇦", ml:false, sp:false },
   { d:"24 Jun", dow:"Mié", h:"15:00", esp:"21:00", a:"UEFA Playoff A", b:"🇶🇦 Qatar", g:"B", v:"Seattle", ml:false, sp:false },
   { d:"24 Jun", dow:"Mié", h:"18:00", esp:"00:00+1", a:"🏴󠁧󠁢󠁳󠁣󠁴󠁿 Escocia", b:"🇧🇷 Brasil", g:"C", v:"Miami", ml:false, sp:false },
   { d:"24 Jun", dow:"Mié", h:"18:00", esp:"00:00+1", a:"🇲🇦 Marruecos", b:"🇭🇹 Haití", g:"C", v:"Atlanta", ml:false, sp:false },
   { d:"24 Jun", dow:"Mié", h:"21:00", esp:"03:00+1", a:"UEFA Playoff D", b:"🇲🇽 México", g:"A", v:"México DF 🇲🇽", ml:false, sp:false },
   { d:"24 Jun", dow:"Mié", h:"21:00", esp:"03:00+1", a:"🇿🇦 Sudáfrica", b:"🇰🇷 Corea del Sur", g:"A", v:"Monterrey 🇲🇽", ml:false, sp:false },
-  // June 25 (Jue)
   { d:"25 Jun", dow:"Jue", h:"16:00", esp:"22:00", a:"🇪🇨 Ecuador", b:"🇩🇪 Alemania", g:"E", v:"🏟️ MetLife", ml:true, sp:false },
   { d:"25 Jun", dow:"Jue", h:"16:00", esp:"22:00", a:"🇨🇼 Curaçao", b:"🇨🇮 Costa de Marfil", g:"E", v:"Philadelphia", ml:false, sp:false },
   { d:"25 Jun", dow:"Jue", h:"19:00", esp:"01:00+1", a:"🇯🇵 Japón", b:"UEFA Playoff B", g:"F", v:"Dallas", ml:false, sp:false },
   { d:"25 Jun", dow:"Jue", h:"19:00", esp:"01:00+1", a:"🇹🇳 Túnez", b:"🇳🇱 Países Bajos", g:"F", v:"Kansas City", ml:false, sp:false },
   { d:"25 Jun", dow:"Jue", h:"22:00", esp:"04:00+1", a:"UEFA Playoff C", b:"🇺🇸 EE.UU.", g:"D", v:"Los Ángeles", ml:false, sp:false },
   { d:"25 Jun", dow:"Jue", h:"22:00", esp:"04:00+1", a:"🇵🇾 Paraguay", b:"🇦🇺 Australia", g:"D", v:"San Francisco", ml:false, sp:false },
-  // June 26 (Vie) - ÚLTIMA JORNADA GRUPO H (ESPAÑA)
   { d:"26 Jun", dow:"Vie", h:"15:00", esp:"21:00", a:"🇳🇴 Noruega", b:"🇫🇷 Francia", g:"I", v:"Boston", ml:false, sp:false },
   { d:"26 Jun", dow:"Vie", h:"15:00", esp:"21:00", a:"🇸🇳 Senegal", b:"IC Playoff 2", g:"I", v:"Toronto", ml:false, sp:false },
   { d:"26 Jun", dow:"Vie", h:"20:00", esp:"02:00+1", a:"🇨🇻 Cabo Verde", b:"🇸🇦 Arabia Saudí", g:"H", v:"Houston", ml:false, sp:false },
   { d:"26 Jun", dow:"Vie", h:"20:00", esp:"02:00+1", a:"🇺🇾 Uruguay", b:"🇪🇸 ESPAÑA", g:"H", v:"Guadalajara 🇲🇽", ml:false, sp:true },
   { d:"26 Jun", dow:"Vie", h:"23:00", esp:"05:00+1", a:"🇪🇬 Egipto", b:"🇮🇷 Irán", g:"G", v:"Seattle", ml:false, sp:false },
   { d:"26 Jun", dow:"Vie", h:"23:00", esp:"05:00+1", a:"🇳🇿 N. Zelanda", b:"🇧🇪 Bélgica", g:"G", v:"Vancouver 🇨🇦", ml:false, sp:false },
-  // June 27 (Sáb)
   { d:"27 Jun", dow:"Sáb", h:"17:00", esp:"23:00", a:"🇵🇦 Panamá", b:"🏴󠁧󠁢󠁥󠁮󠁧󠁿 Inglaterra", g:"L", v:"🏟️ MetLife", ml:true, sp:false },
   { d:"27 Jun", dow:"Sáb", h:"17:00", esp:"23:00", a:"🇭🇷 Croacia", b:"🇬🇭 Ghana", g:"L", v:"Philadelphia", ml:false, sp:false },
   { d:"27 Jun", dow:"Sáb", h:"19:30", esp:"01:30+1", a:"IC Playoff 1", b:"🇺🇿 Uzbekistán", g:"K", v:"Atlanta", ml:false, sp:false },
   { d:"27 Jun", dow:"Sáb", h:"19:30", esp:"01:30+1", a:"🇨🇴 Colombia", b:"🇵🇹 Portugal", g:"K", v:"Miami", ml:false, sp:false },
   { d:"27 Jun", dow:"Sáb", h:"22:00", esp:"04:00+1", a:"🇯🇴 Jordania", b:"🇦🇷 Argentina", g:"J", v:"Dallas", ml:false, sp:false },
   { d:"27 Jun", dow:"Sáb", h:"22:00", esp:"04:00+1", a:"🇩🇿 Argelia", b:"🇦🇹 Austria", g:"J", v:"Kansas City", ml:false, sp:false },
-  // June 28 (Dom) - OCTAVOS/32avos
   { d:"28 Jun", dow:"Dom", h:"15:00", esp:"21:00", a:"2º Grupo A", b:"2º Grupo B", g:"R32", v:"Los Ángeles", ml:false, sp:false },
-  // June 29 (Lun)
   { d:"29 Jun", dow:"Lun", h:"13:00", esp:"19:00", a:"1º Grupo C", b:"2º Grupo F", g:"R32", v:"Houston", ml:false, sp:false },
   { d:"29 Jun", dow:"Lun", h:"16:30", esp:"22:30", a:"1º Grupo E", b:"3º A/B/C/D/F", g:"R32", v:"Boston", ml:false, sp:false },
   { d:"29 Jun", dow:"Lun", h:"21:00", esp:"03:00+1", a:"1º Grupo F", b:"2º Grupo C", g:"R32", v:"Monterrey 🇲🇽", ml:false, sp:false },
-  // June 30 (Mar)
   { d:"30 Jun", dow:"Mar", h:"13:00", esp:"19:00", a:"2º Grupo E", b:"2º Grupo I", g:"R32", v:"Dallas", ml:false, sp:false },
   { d:"30 Jun", dow:"Mar", h:"17:00", esp:"23:00", a:"1º Grupo I", b:"3º C/D/F/G/H", g:"R32", v:"🏟️ MetLife", ml:true, sp:false },
   { d:"30 Jun", dow:"Mar", h:"21:00", esp:"03:00+1", a:"1º Grupo A", b:"3º C/E/F/H/I", g:"R32", v:"México DF 🇲🇽", ml:false, sp:false },
-  // July 1 (Mié) - DÍA DE VUELTA (vuelo 16:45)
   { d:"1 Jul", dow:"Mié", h:"12:00", esp:"18:00", a:"1º Grupo L", b:"3º E/H/I/J/K", g:"R32", v:"Atlanta", ml:false, sp:false },
   { d:"1 Jul", dow:"Mié", h:"16:00", esp:"22:00", a:"1º Grupo G", b:"3º A/E/H/I/J", g:"R32", v:"Seattle", ml:false, sp:false },
   { d:"1 Jul", dow:"Mié", h:"20:00", esp:"02:00+1", a:"1º Grupo D", b:"3º B/E/F/I/J", g:"R32", v:"San Francisco", ml:false, sp:false },
@@ -912,7 +1111,6 @@ function WorldCupTab() {
     <div style={{ padding:"12px 14px" }}>
       <Title>⚽ Mundial 2026 — Tu Guía</Title>
 
-      {/* Spain highlight card */}
       <Card style={{ background:`linear-gradient(135deg, #1a0a0a, #2a1515)`, border:`1.5px solid ${C.red}40`, marginBottom:8 }}>
         <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
           <span style={{ fontSize:28 }}>🇪🇸</span>
@@ -938,7 +1136,6 @@ function WorldCupTab() {
         </div>
       </Card>
 
-      {/* MetLife highlight card */}
       <Card style={{ background:`linear-gradient(135deg, #0a1a0a, #152a15)`, border:`1.5px solid ${C.green}40`, marginBottom:8 }}>
         <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
           <span style={{ fontSize:28 }}>🏟️</span>
@@ -964,7 +1161,6 @@ function WorldCupTab() {
         </div>
       </Card>
 
-      {/* Filters */}
       <div style={{ display:"flex", gap:4, marginBottom:10, flexWrap:"wrap" }}>
         {filters.map(f => (
           <button key={f.id} onClick={() => setFilter(f.id)} style={{
@@ -976,7 +1172,6 @@ function WorldCupTab() {
         ))}
       </div>
 
-      {/* Day-by-day schedule */}
       {WC_DAYS.map(day => {
         const matches = byDay[day];
         if (!matches) return null;
@@ -1046,7 +1241,6 @@ function WorldCupTab() {
         );
       })}
 
-      {/* Footer info */}
       <Card style={{ marginTop:8, background:`${C.accent}08` }}>
         <div style={{ fontSize:10, color:C.muted, lineHeight:1.6 }}>
           <div style={{ fontWeight:700, color:C.accent, marginBottom:4 }}>📌 Info útil</div>
@@ -1082,10 +1276,9 @@ export default function App() {
 
   return (
     <div style={{ fontFamily:"-apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif", background:C.bg, color:C.text, minHeight:"100vh", maxWidth:500, margin:"0 auto", paddingBottom:72 }}>
-      {/* Header */}
       <div style={{ background:`linear-gradient(145deg, #1a2e44, ${C.bg})`, padding:"14px 16px 10px", borderBottom:`1.5px solid ${C.accent}55`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
         <div>
-          <h1 style={{ fontSize:18, fontWeight:900, margin:0, background:`linear-gradient(90deg, ${C.accent}, ${C.gold})`, WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>🗽 Nueva York 2026</h1>
+          <h1 style={{ fontSize:18, fontWeight:900, margin:0, background:`linear-gradient(90deg, ${C.accent}, ${C.gold})`, WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>🗽 ❤️</h1>
           <p style={{ fontSize:9, color:C.muted, margin:0, letterSpacing:2 }}>20 JUN — 1 JUL · 5 VIAJEROS</p>
         </div>
         <button onClick={gps.active ? gps.stop : gps.start} style={{
@@ -1112,7 +1305,6 @@ export default function App() {
       {tab === "ai" && <AITab />}
       {tab === "ctrl" && <ControlTab />}
 
-      {/* Bottom nav */}
       <nav style={{ display:"flex", position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:500, background:`${C.bg}f0`, backdropFilter:"blur(20px)", borderTop:`1px solid ${C.border}`, zIndex:999 }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
