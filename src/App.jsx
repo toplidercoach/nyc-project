@@ -22,14 +22,33 @@ function distInfo(lat, lng, from) {
   return { km: (m / 1000).toFixed(1), walkMin: Math.round(m / 80), carMin: Math.max(5, Math.round(m / 500)), m: Math.round(m) };
 }
 
-function DistBadge({ lat, lng, gps }) {
+function DistBadge({ lat, lng, gps, name }) {
   const d = distInfo(lat, lng, gps);
   const label = gps ? "📍" : "🏠";
+
+  // Construye URLs de Google Maps
+  const mapsView = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}${name ? `(${encodeURIComponent(name)})` : ""}`;
+  const mapsDir = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}${gps ? `&origin=${gps.lat},${gps.lng}` : ""}`;
+
+  // Estilo común para los botones de mapa
+  const mapBtn = (color) => ({
+    fontSize: 9, padding: "1px 5px", borderRadius: 4,
+    background: `${color}15`, color: color,
+    textDecoration: "none", cursor: "pointer",
+    border: `1px solid ${color}30`,
+    display: "inline-block",
+  });
+
+  // stopPropagation para que pulsar el botón no active el onClick del padre (ej: tarjetas plegables)
+  const stop = (e) => e.stopPropagation();
+
   return (
-    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>
+    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }} onClick={stop}>
       <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, background: `${C.blue}15`, color: C.blue }}>{label} {d.km}km</span>
       <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, background: `${C.gold}15`, color: C.gold }}>🚶{d.walkMin}min</span>
       <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, background: `${C.green}15`, color: C.green }}>🚕~{d.carMin}min</span>
+      <a href={mapsView} target="_blank" rel="noopener noreferrer" onClick={stop} title="Ver en Google Maps" style={mapBtn(C.purple)}>📍 Mapa</a>
+      <a href={mapsDir} target="_blank" rel="noopener noreferrer" onClick={stop} title="Cómo llegar con Google Maps" style={mapBtn(C.accent)}>🧭 Ir</a>
     </div>
   );
 }
@@ -381,6 +400,7 @@ function HomeTab() {
         <div style={{ fontSize:13 }}>65 Corbin Ave, NJ 07306</div>
         <div style={{ fontSize:11, color:C.muted }}>Anfitrión: Faria · Check-out: 1 jul 10:00</div>
         <div style={{ fontSize:11, padding:"3px 7px", background:`${C.gold}12`, borderRadius:6, color:C.gold, marginTop:4, display:"inline-block" }}>🚇 PATH: Journal Sq → Manhattan ~20 min</div>
+        <DistBadge lat={HOME.lat} lng={HOME.lng} name="Airbnb 65 Corbin Ave Jersey City" />
       </Card>
       <Card>
         <div style={{ fontSize:14, fontWeight:700, marginBottom:4 }}>🛡️ Seguro IMAWAY · 250002H5</div>
@@ -552,7 +572,7 @@ function CalendarTab({ gps }) {
               <div onClick={() => !isMoving && startEdit(ev)} style={{ flex:1, borderLeft:`3px solid ${ev.c||C.accent}`, borderRadius:"0 8px 8px 0", padding:"8px 10px", background:`${ev.c||C.accent}0a`, border:`1px solid ${ev.c||C.accent}18`, position:"relative", cursor:ev.f?"default":"pointer" }}>
                 <div style={{ fontSize:13, fontWeight:600, paddingRight:ev.f?18:50 }}>{ev.t}</div>
                 {hasOverlap && <span style={{ fontSize:9, color:C.red }}>⚠️ Solapamiento</span>}
-                {ev.lat && <DistBadge lat={ev.lat} lng={ev.lng} gps={gps} />}
+                {ev.lat && <DistBadge lat={ev.lat} lng={ev.lng} gps={gps} name={ev.t} />}
                 {!ev.f && (
                   <div style={{ position:"absolute", top:5, right:5, display:"flex", gap:2 }}>
                     <button onClick={(e) => { e.stopPropagation(); setMoving(isMoving ? null : ev.id); }} title="Mover día" style={{ background:"none", border:"none", fontSize:11, cursor:"pointer", opacity:0.6, padding:"0 2px" }}>📦</button>
@@ -683,7 +703,7 @@ function MoviesTab({ gps }) {
                 {m.spots.map((sp,j) => (
                   <div key={j} style={{ marginBottom:5, padding:"5px 7px", background:`${C.blue}08`, borderRadius:6 }}>
                     <div style={{ fontSize:12, fontWeight:600 }}>📍 {sp.n}</div>
-                    <DistBadge lat={sp.lat} lng={sp.lng} gps={gps} />
+                    <DistBadge lat={sp.lat} lng={sp.lng} gps={gps} name={sp.n} />
                   </div>
                 ))}
                 {m.tip && <div style={{ fontSize:11, color:C.gold, marginTop:4 }}>💡 {m.tip}</div>}
@@ -724,7 +744,7 @@ function EventsTab({ gps }) {
             <Badge c={C.gold}>{e.price}</Badge>
           </div>
           <div style={{ fontSize:11, color:C.muted, marginTop:4 }}>💡 {e.tip}</div>
-          {e.lat && <DistBadge lat={e.lat} lng={e.lng} gps={gps} />}
+          {e.lat && <DistBadge lat={e.lat} lng={e.lng} gps={gps} name={e.name} />}
         </Card>
       ))}
       <Card style={{ background:`${C.accent}0a` }}>
@@ -760,7 +780,7 @@ function FoodTab({ gps }) {
             <div style={{ display:"flex", gap:3 }}><Badge c={C.blue}>{r.type}</Badge><Badge c={priceC[r.price]||C.muted}>{r.price}</Badge></div>
           </div>
           <div style={{ fontSize:12, color:C.muted, marginTop:4 }}>{r.desc}</div>
-          {r.lat && <DistBadge lat={r.lat} lng={r.lng} gps={gps} />}
+          {r.lat && <DistBadge lat={r.lat} lng={r.lng} gps={gps} name={`${r.name} ${r.zone}`} />}
         </Card>
       ))}
     </div>
