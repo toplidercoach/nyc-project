@@ -184,6 +184,170 @@ function nextDow(dow) {
   return DOW_NEXT[dow] || "+1";
 }
 
+// Hook para calidad del aire en NY (Open-Meteo Air Quality, gratis sin clave)
+function useAirQuality() {
+  const cached = (typeof window !== "undefined" && JSON.parse(localStorage.getItem("nyc_aqi") || "null")) || null;
+  const [data, setData] = useState(cached?.data || null);
+  const [updated, setUpdated] = useState(cached?.updated || null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const NYC_LAT = 40.7128;
+  const NYC_LNG = -74.0060;
+
+  const fetchAQI = useCallback(async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${NYC_LAT}&longitude=${NYC_LNG}&current=us_aqi,pm2_5,pm10,ozone&timezone=America/New_York`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("API error");
+      const json = await res.json();
+      const now = Date.now();
+      setData(json);
+      setUpdated(now);
+      try { localStorage.setItem("nyc_aqi", JSON.stringify({ data: json, updated: now })); } catch {}
+    } catch (e) {
+      setError(true);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    const stale = !updated || (Date.now() - updated) > 60 * 60 * 1000; // refresca cada hora
+    if (stale) fetchAQI();
+  }, [fetchAQI, updated]);
+
+  return { data, updated, loading, error, refresh: fetchAQI };
+}
+
+// Helpers para AQI (US AQI scale)
+function aqiInfo(aqi) {
+  if (aqi == null) return { label: "—", color: "#7e8fa3", emoji: "🌫️", advice: "—" };
+  if (aqi <= 50)  return { label: "Bueno",          color: "#22c55e", emoji: "🟢", advice: "Calidad excelente" };
+  if (aqi <= 100) return { label: "Moderado",       color: "#fbbf24", emoji: "🟡", advice: "Aceptable para todos" };
+  if (aqi <= 150) return { label: "Sensibles",      color: "#f97316", emoji: "🟠", advice: "Cuidado personas sensibles (mayores, niños)" };
+  if (aqi <= 200) return { label: "Insalubre",      color: "#ef4444", emoji: "🔴", advice: "Limitar tiempo al aire libre" };
+  if (aqi <= 300) return { label: "Muy insalubre",  color: "#a78bfa", emoji: "🟣", advice: "Evitar actividad al aire libre" };
+  return                  { label: "Peligroso",     color: "#7c2d12", emoji: "⚫", advice: "Quedaos en interior" };
+}
+
+// Hook para estaciones de Citi Bike cercanas (gbfs.citibikenyc.com, gratis sin clave)
+function useCitiBike(gps) {
+  const [stations, setStations] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    if (!gps) return;
+    setLoading(true);
+    setError(false);
+    try {
+      // Necesitamos 2 endpoints: información de estaciones (nombre, ubicación) + estado (bicis disponibles)
+      const [infoRes, statusRes] = await Promise.all([
+        fetch("https://gbfs.citibikenyc.com/gbfs/en/station_information.json"),
+        fetch("https://gbfs.citibikenyc.com/gbfs/en/station_status.json"),
+      ]);
+      if (!infoRes.ok || !statusRes.ok) throw new Error("API error");
+      const info = await infoRes.json();
+      const status = await statusRes.json();
+
+      // Indexar status por id
+      const statusMap = {};
+      status.data.stations.forEach(s => { statusMap[s.station_id] = s; });
+
+      // Combinar y calcular distancia
+      const combined = info.data.stations
+        .map(s => {
+          const st = statusMap[s.station_id];
+          if (!st || !st.is_installed || st.is_renting === false) return null;
+          const distM = haversine(gps.lat, gps.lng, s.lat, s.lon);
+          return {
+            id: s.station_id,
+            name: s.name,
+            lat: s.lat,
+            lng: s.lon,
+            bikes: st.num_bikes_available || 0,
+            ebikes: st.num_ebikes_available || 0,
+            docks: st.num_docks_available || 0,
+            distM,
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.distM - b.distM)
+        .slice(0, 5); // Top 5 cercanas
+
+      setStations(combined);
+    } catch (e) {
+      setError(true);
+    }
+    setLoading(false);
+  }, [gps]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return { stations, loading, error, refresh: fetchData };
+}
+
+// Hook para calificaciones del NYC Health Dept (Socrata, gratis con throttling)
+// Devuelve un objeto { "joe's pizza": "A", ... } indexado por nombre normalizado
+function useRestaurantGrades() {
+  const cached = (typeof window !== "undefined" && JSON.parse(localStorage.getItem("nyc_grades") || "null")) || null;
+  const [grades, setGrades] = useState(cached?.grades || {});
+  const [updated, setUpdated] = useState(cached?.updated || null);
+  const [loading, setLoading] = useState(false);
+
+  const norm = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+  const fetchGrades = useCallback(async (names) => {
+    if (!names || names.length === 0) return;
+    setLoading(true);
+    try {
+      // Intentamos buscar cada nombre. La API es: data.cityofnewyork.us/resource/43nn-pn8j.json
+      // Solo recupero los que aún no tengo (cache)
+      const result = { ...grades };
+      for (const name of names) {
+        const key = norm(name);
+        if (result[key]) continue; // ya cacheado
+        // Solo el primer nombre (sin las palabras cortas para mejor match)
+        const firstWord = name.split(/\s+/).filter(w => w.length >= 3)[0] || name.split(/\s+/)[0];
+        const q = encodeURIComponent(firstWord.toUpperCase());
+        const url = `https://data.cityofnewyork.us/resource/43nn-pn8j.json?$select=dba,grade,inspection_date,boro&$where=upper(dba)%20like%20'%25${q}%25'%20AND%20grade%20IS%20NOT%20NULL&$order=inspection_date%20DESC&$limit=5`;
+        try {
+          const res = await fetch(url);
+          if (!res.ok) continue;
+          const json = await res.json();
+          // Buscar el match más cercano por nombre
+          const match = json.find(r => norm(r.dba).includes(key.split(" ")[0]) || key.includes(norm(r.dba).split(" ")[0]));
+          if (match && match.grade) {
+            result[key] = match.grade;
+          } else {
+            result[key] = null; // marcar como buscado y no encontrado
+          }
+        } catch {
+          result[key] = null;
+        }
+        // Pequeña pausa para no saturar la API sin token
+        await new Promise(r => setTimeout(r, 200));
+      }
+      const now = Date.now();
+      setGrades(result);
+      setUpdated(now);
+      try { localStorage.setItem("nyc_grades", JSON.stringify({ grades: result, updated: now })); } catch {}
+    } catch (e) {
+      // silencioso
+    }
+    setLoading(false);
+  }, [grades]);
+
+  // Función para obtener grade de un restaurante específico
+  const getGrade = (name) => grades[norm(name)] || null;
+
+  return { grades, getGrade, loading, fetchGrades, updated };
+}
+
 // ═══════════════════════════════════════════
 // THEME
 // ═══════════════════════════════════════════
@@ -469,7 +633,7 @@ function CurrencyPanel({ fx }) {
 const TRIP_START = new Date("2026-06-20T12:25:00+02:00");
 const TRIP_END = new Date("2026-07-01T16:45:00-04:00");
 
-function HomeTab({ setTab }) {
+function HomeTab({ setTab, gps }) {
   const [sub, setSub] = useState("today");
 
   return (
@@ -488,7 +652,7 @@ function HomeTab({ setTab }) {
       </div>
 
       <div style={{ padding:"12px 14px" }}>
-        {sub === "today" && <HomeToday setTab={setTab} />}
+        {sub === "today" && <HomeToday setTab={setTab} gps={gps} />}
         {sub === "data" && <HomeData />}
       </div>
     </div>
@@ -498,8 +662,10 @@ function HomeTab({ setTab }) {
 // ───────────────────────────────────────────
 // HOME · Hoy (panel dinámico)
 // ───────────────────────────────────────────
-function HomeToday({ setTab }) {
+function HomeToday({ setTab, gps }) {
   const weather = useWeather();
+  const airQ = useAirQuality();
+  const citiBike = useCitiBike(gps);
   const now = new Date();
   const tripStarted = now >= TRIP_START;
   const tripEnded = now > TRIP_END;
@@ -659,6 +825,108 @@ function HomeToday({ setTab }) {
           })
         )}
       </Card>
+
+      {/* CALIDAD DEL AIRE */}
+      <Card>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+          <div style={{ fontSize:13, fontWeight:800 }}>💨 Calidad del aire</div>
+          <button onClick={airQ.refresh} disabled={airQ.loading} style={{
+            padding:"3px 8px", borderRadius:6, border:`1px solid ${C.border}`,
+            background:"transparent", color:C.muted, fontSize:11,
+            cursor:airQ.loading?"default":"pointer", opacity:airQ.loading?0.4:1
+          }}>{airQ.loading ? "⏳" : "🔄"}</button>
+        </div>
+
+        {airQ.error && !airQ.data && (
+          <div style={{ fontSize:11, color:C.red, padding:6 }}>⚠️ Sin datos de calidad del aire</div>
+        )}
+
+        {airQ.data && (() => {
+          const cur = airQ.data.current;
+          const aqi = cur?.us_aqi != null ? Math.round(cur.us_aqi) : null;
+          const info = aqiInfo(aqi);
+          return (
+            <div>
+              <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+                <div style={{ fontSize:36, lineHeight:1 }}>{info.emoji}</div>
+                <div style={{ flex:1 }}>
+                  <div style={{ display:"flex", alignItems:"baseline", gap:8 }}>
+                    <div style={{ fontSize:28, fontWeight:900, color:info.color, lineHeight:1 }}>{aqi ?? "—"}</div>
+                    <div style={{ fontSize:11, fontWeight:700, color:info.color }}>{info.label}</div>
+                  </div>
+                  <div style={{ fontSize:10, color:C.muted, marginTop:2 }}>{info.advice}</div>
+                  <div style={{ fontSize:9, color:C.muted, marginTop:2 }}>
+                    {cur.pm2_5 != null && <>PM2.5: {Math.round(cur.pm2_5)} </>}
+                    {cur.pm10 != null && <>· PM10: {Math.round(cur.pm10)} </>}
+                    {cur.ozone != null && <>· O₃: {Math.round(cur.ozone)}</>}
+                  </div>
+                </div>
+              </div>
+              {aqi >= 100 && (
+                <div style={{ marginTop:8, padding:"6px 8px", background:`${info.color}15`, borderRadius:6, fontSize:10, color:info.color }}>
+                  ⚠️ Atención especial para Paz (mayor de 65). Considerar paseos cortos o interiores.
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </Card>
+
+      {/* CITI BIKE — solo si GPS activo */}
+      {gps && (
+        <Card>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+            <div style={{ fontSize:13, fontWeight:800 }}>🚲 Citi Bike cerca</div>
+            <button onClick={citiBike.refresh} disabled={citiBike.loading} style={{
+              padding:"3px 8px", borderRadius:6, border:`1px solid ${C.border}`,
+              background:"transparent", color:C.muted, fontSize:11,
+              cursor:citiBike.loading?"default":"pointer", opacity:citiBike.loading?0.4:1
+            }}>{citiBike.loading ? "⏳" : "🔄"}</button>
+          </div>
+
+          {citiBike.error && (
+            <div style={{ fontSize:11, color:C.red, padding:6 }}>⚠️ No se pudo cargar Citi Bike</div>
+          )}
+
+          {!citiBike.stations && !citiBike.error && (
+            <div style={{ fontSize:11, color:C.muted, padding:6, textAlign:"center" }}>Buscando estaciones cercanas...</div>
+          )}
+
+          {citiBike.stations && citiBike.stations.length === 0 && (
+            <div style={{ fontSize:11, color:C.muted, padding:6 }}>No hay estaciones disponibles cerca</div>
+          )}
+
+          {citiBike.stations && citiBike.stations.length > 0 && (
+            <>
+              {citiBike.stations.map(s => {
+                const distKm = (s.distM / 1000).toFixed(1);
+                const walkMin = Math.round(s.distM / 80);
+                return (
+                  <div key={s.id} style={{
+                    display:"flex", alignItems:"center", gap:8,
+                    padding:"6px 8px", marginBottom:3,
+                    background:C.bg, borderRadius:6,
+                    borderLeft:`3px solid ${s.bikes > 0 ? C.green : C.muted}`
+                  }}>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:11, fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.name}</div>
+                      <div style={{ fontSize:9, color:C.muted }}>📍 {distKm}km · 🚶{walkMin}min</div>
+                    </div>
+                    <div style={{ textAlign:"right" }}>
+                      <div style={{ fontSize:14, fontWeight:800, color:s.bikes > 0 ? C.green : C.muted }}>🚲 {s.bikes}</div>
+                      {s.ebikes > 0 && <div style={{ fontSize:8, color:C.gold }}>⚡ {s.ebikes} eléctricas</div>}
+                      <div style={{ fontSize:8, color:C.muted }}>🅿️ {s.docks} libres</div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{ fontSize:9, color:C.muted, marginTop:6, textAlign:"center" }}>
+                Día único $5 · Pase 24h $19 · 30min ilimitados
+              </div>
+            </>
+          )}
+        </Card>
+      )}
 
       {/* PLAN DEL DÍA */}
       <Card>
@@ -1098,24 +1366,68 @@ function FoodTab({ gps }) {
   const priceC = {"$":C.green,"$$":C.gold,"$$$":C.accent,"$-$$":C.blue};
   const filtered = RESTAURANTS.filter(r => filter === "all" || (filter === "🇪🇸" ? r.type === "🇪🇸" : r.price === filter));
 
+  const ratings = useRestaurantGrades();
+
+  // Cargar ratings al primer render
+  useEffect(() => {
+    const names = RESTAURANTS.map(r => r.name);
+    ratings.fetchGrades(names);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const gradeColor = (g) => {
+    if (g === "A") return C.green;
+    if (g === "B") return C.gold;
+    if (g === "C") return C.red;
+    return C.muted;
+  };
+
   return (
     <div style={{ padding: "12px 14px" }}>
-      <Title sub="Con distancias desde casa o GPS">🍕 Dónde comer</Title>
+      <Title sub="Con distancias y calificación oficial NYC Health Dept">🍕 Dónde comer</Title>
       <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:12 }}>
         {[["all","Todos"],["$","Barato"],["$$","Medio"],["$$$","Top"],["🇪🇸","Español"]].map(([k,l]) => (
           <button key={k} onClick={() => setFilter(k)} style={{ padding:"4px 8px", borderRadius:14, border:`1px solid ${filter===k?C.accent:C.border}`, background:filter===k?`${C.accent}18`:"transparent", color:filter===k?C.accent:C.muted, fontSize:10, fontWeight:600, cursor:"pointer" }}>{l}</button>
         ))}
       </div>
-      {filtered.map((r,i) => (
-        <Card key={i} style={{ borderLeft:r.must?`3px solid ${C.gold}`:undefined }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-            <div><div style={{ fontSize:14, fontWeight:700 }}>{r.name} {r.must && "⭐"}</div><div style={{ fontSize:11, color:C.muted }}>{r.zone}</div></div>
-            <div style={{ display:"flex", gap:3 }}><Badge c={C.blue}>{r.type}</Badge><Badge c={priceC[r.price]||C.muted}>{r.price}</Badge></div>
-          </div>
-          <div style={{ fontSize:12, color:C.muted, marginTop:4 }}>{r.desc}</div>
-          {r.lat && <DistBadge lat={r.lat} lng={r.lng} gps={gps} name={`${r.name} ${r.zone}`} />}
-        </Card>
-      ))}
+      {ratings.loading && (
+        <div style={{ fontSize:10, color:C.muted, marginBottom:8, textAlign:"center" }}>
+          Cargando calificaciones oficiales del NYC Health Dept...
+        </div>
+      )}
+      {filtered.map((r,i) => {
+        const grade = ratings.getGrade(r.name);
+        return (
+          <Card key={i} style={{ borderLeft:r.must?`3px solid ${C.gold}`:undefined }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+              <div>
+                <div style={{ fontSize:14, fontWeight:700, display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+                  {r.name} {r.must && "⭐"}
+                  {grade && (
+                    <span title={`Calificación oficial NYC Health Dept: ${grade}`} style={{
+                      display:"inline-flex", alignItems:"center", justifyContent:"center",
+                      width:22, height:22, borderRadius:4,
+                      background: gradeColor(grade), color:"#fff",
+                      fontSize:13, fontWeight:900
+                    }}>{grade}</span>
+                  )}
+                </div>
+                <div style={{ fontSize:11, color:C.muted }}>{r.zone}</div>
+              </div>
+              <div style={{ display:"flex", gap:3 }}><Badge c={C.blue}>{r.type}</Badge><Badge c={priceC[r.price]||C.muted}>{r.price}</Badge></div>
+            </div>
+            <div style={{ fontSize:12, color:C.muted, marginTop:4 }}>{r.desc}</div>
+            {r.lat && <DistBadge lat={r.lat} lng={r.lng} gps={gps} name={`${r.name} ${r.zone}`} />}
+          </Card>
+        );
+      })}
+      <Card style={{ background:`${C.green}08`, marginTop:8 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:C.green, marginBottom:4 }}>🅰️ Calificaciones NYC Health Dept</div>
+        <div style={{ fontSize:10, color:C.muted, lineHeight:1.6 }}>
+          <span style={{ color:C.green, fontWeight:700 }}>A</span> = Excelente higiene · <span style={{ color:C.gold, fontWeight:700 }}>B</span> = Aceptable · <span style={{ color:C.red, fontWeight:700 }}>C</span> = Necesita mejoras<br/>
+          ⚠️ La ausencia de letra significa que no encontramos coincidencia en la base de datos oficial (no implica nada negativo).
+        </div>
+      </Card>
     </div>
   );
 }
@@ -2193,7 +2505,7 @@ export default function App() {
         </div>
       )}
 
-      {tab === "home" && <HomeTab setTab={setTab} />}
+      {tab === "home" && <HomeTab setTab={setTab} gps={gps.pos} />}
       {tab === "cal" && <CalendarTab gps={gps.pos} />}
       {tab === "wc" && <WorldCupTab />}
       {tab === "movies" && <MoviesTab gps={gps.pos} />}
