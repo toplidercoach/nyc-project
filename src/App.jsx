@@ -103,6 +103,87 @@ function useExchangeRate() {
   return { rate, updated, loading, error, refresh: fetchRate };
 }
 
+// Hook para meteorología en Nueva York (API Open-Meteo, gratis sin clave)
+function useWeather() {
+  const cached = (typeof window !== "undefined" && JSON.parse(localStorage.getItem("nyc_weather") || "null")) || null;
+  const [data, setData] = useState(cached?.data || null);
+  const [updated, setUpdated] = useState(cached?.updated || null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  // Coordenadas NY (Manhattan)
+  const NYC_LAT = 40.7128;
+  const NYC_LNG = -74.0060;
+
+  const fetchWeather = useCallback(async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${NYC_LAT}&longitude=${NYC_LNG}&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=America/New_York&forecast_days=6`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("API error");
+      const json = await res.json();
+      const now = Date.now();
+      setData(json);
+      setUpdated(now);
+      try { localStorage.setItem("nyc_weather", JSON.stringify({ data: json, updated: now })); } catch {}
+    } catch (e) {
+      setError(true);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    // Refresca si nunca o si pasaron más de 30 minutos
+    const stale = !updated || (Date.now() - updated) > 30 * 60 * 1000;
+    if (stale) fetchWeather();
+  }, [fetchWeather, updated]);
+
+  return { data, updated, loading, error, refresh: fetchWeather };
+}
+
+// Iconos según código WMO de Open-Meteo
+function weatherIcon(code) {
+  if (code === 0) return "☀️";          // despejado
+  if (code <= 2) return "🌤️";           // mayormente despejado
+  if (code === 3) return "☁️";           // nublado
+  if (code <= 49) return "🌫️";           // niebla
+  if (code <= 67) return "🌧️";           // lluvia
+  if (code <= 77) return "❄️";           // nieve
+  if (code <= 82) return "🌦️";           // chubascos
+  if (code <= 86) return "🌨️";           // chubascos de nieve
+  if (code <= 99) return "⛈️";           // tormenta
+  return "🌡️";
+}
+
+function weatherDesc(code) {
+  if (code === 0) return "Despejado";
+  if (code <= 2) return "Mayormente despejado";
+  if (code === 3) return "Nublado";
+  if (code <= 49) return "Niebla";
+  if (code <= 57) return "Llovizna";
+  if (code <= 67) return "Lluvia";
+  if (code <= 77) return "Nieve";
+  if (code <= 82) return "Chubascos";
+  if (code <= 86) return "Chubascos de nieve";
+  if (code <= 99) return "Tormenta";
+  return "—";
+}
+
+// Formatea hora de partido: "00:00+1" → { time: "00:00", nextDay: true }
+function parseMatchTime(raw) {
+  if (!raw) return { time: "—", nextDay: false };
+  const nextDay = raw.includes("+1");
+  const time = raw.replace("+1", "").trim();
+  return { time, nextDay };
+}
+
+// Devuelve día abreviado siguiente al dado: "Lun" → "Mar"
+const DOW_NEXT = { "Dom":"Lun", "Lun":"Mar", "Mar":"Mié", "Mié":"Jue", "Jue":"Vie", "Vie":"Sáb", "Sáb":"Dom" };
+function nextDow(dow) {
+  return DOW_NEXT[dow] || "+1";
+}
+
 // ═══════════════════════════════════════════
 // THEME
 // ═══════════════════════════════════════════
@@ -124,11 +205,24 @@ const Title = ({ children, sub }) => <div style={{ marginBottom: 14 }}><div styl
 // DATA
 // ═══════════════════════════════════════════
 const TRAVELERS = [
-  { id: "javi", name: "Javi", age: 21, icon: "🧑" },
-  { id: "rosa", name: "Rosa", age: 54, icon: "👩" },
-  { id: "paz", name: "Paz", age: 70, icon: "👵" },
-  { id: "viti", name: "Viti", age: 39, icon: "🧔" },
-  { id: "miguel", name: "Miguel", age: 54, icon: "👨" },
+  { id: "javi",   name: "Javi",   age: 21, icon: "🧑", phone: "+34673321545", wa: true },
+  { id: "rosa",   name: "Rosa",   age: 54, icon: "👩", phone: "+34637198949", wa: true },
+  { id: "paz",    name: "Paz",    age: 70, icon: "👵", phone: "+34649849544", wa: true },
+  { id: "viti",   name: "Viti",   age: 39, icon: "🧔", phone: "+34615239926", wa: true },
+  { id: "miguel", name: "Miguel", age: 54, icon: "👨", phone: "+34607530565", wa: true },
+];
+
+// Grupo de WhatsApp del viaje
+const GROUP_WHATSAPP_URL = "https://chat.whatsapp.com/GIg2GPCGhJA8dv2tXGsLlu";
+
+// Mensajes rápidos pre-escritos
+const QUICK_MESSAGES = [
+  { icon: "⏰", text: "Llego en 10 minutos" },
+  { icon: "📍", text: "¿Dónde estáis?" },
+  { icon: "🍕", text: "¿Comemos juntos?" },
+  { icon: "🚇", text: "Voy en camino" },
+  { icon: "🤳", text: "Punto de encuentro: " },
+  { icon: "✅", text: "Todo bien" },
 ];
 
 const DAY_LABELS = ["20 Sáb","21 Dom","22 Lun","23 Mar","24 Mié","25 Jue","26 Vie","27 Sáb","28 Dom","29 Lun","30 Mar","1 Mié"];
@@ -370,21 +464,260 @@ function CurrencyPanel({ fx }) {
 }
 
 // ═══════════════════════════════════════════
-// 🏠 HOME TAB
+// 🏠 HOME TAB (con sub-pestañas Hoy / Datos)
 // ═══════════════════════════════════════════
-function HomeTab() {
-  const days = Math.max(0, Math.floor((new Date("2026-06-20T12:25:00+02:00") - new Date()) / 864e5));
+const TRIP_START = new Date("2026-06-20T12:25:00+02:00");
+const TRIP_END = new Date("2026-07-01T16:45:00-04:00");
+
+function HomeTab({ setTab }) {
+  const [sub, setSub] = useState("today");
+
   return (
-    <div style={{ padding: "12px 14px" }}>
-      <div style={{ display: "flex", gap: 8, margin: "8px 0 14px" }}>
-        {[{v:days,l:"DÍAS",c:C.accent},{v:11,l:"NOCHES",c:C.gold},{v:5,l:"VIAJEROS",c:C.green}].map((x,i)=>(
-          <div key={i} style={{ textAlign:"center", background:`${x.c}12`, borderRadius:12, padding:"10px 14px", border:`1px solid ${x.c}25`, flex:1 }}>
-            <div style={{ fontSize:26, fontWeight:900, color:x.c }}>{x.v}</div>
-            <div style={{ fontSize:9, color:C.muted, textTransform:"uppercase", letterSpacing:1 }}>{x.l}</div>
-          </div>
+    <div>
+      {/* Sub-pestañas */}
+      <div style={{ display:"flex", gap:4, padding:"10px 14px 6px", background:C.bg2 }}>
+        {[["today","📍 Hoy"],["data","🎫 Datos del viaje"]].map(([k,l]) => (
+          <button key={k} onClick={() => setSub(k)} style={{
+            flex:1, padding:"7px", borderRadius:8,
+            border:`1px solid ${sub===k?C.accent:C.border}`,
+            background:sub===k?`${C.accent}18`:"transparent",
+            color:sub===k?C.accent:C.muted,
+            fontSize:11, fontWeight:700, cursor:"pointer"
+          }}>{l}</button>
         ))}
       </div>
 
+      <div style={{ padding:"12px 14px" }}>
+        {sub === "today" && <HomeToday setTab={setTab} />}
+        {sub === "data" && <HomeData />}
+      </div>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────
+// HOME · Hoy (panel dinámico)
+// ───────────────────────────────────────────
+function HomeToday({ setTab }) {
+  const weather = useWeather();
+  const now = new Date();
+  const tripStarted = now >= TRIP_START;
+  const tripEnded = now > TRIP_END;
+  const days = Math.max(0, Math.floor((TRIP_START - now) / 864e5));
+
+  // Determinar el "día activo" del viaje
+  // Si no ha empezado: día 0 (llegada). Si ya empezó: día actual del viaje (índice 0..11)
+  let activeDayIdx = 0;
+  if (tripStarted && !tripEnded) {
+    const elapsed = Math.floor((now - TRIP_START) / 864e5);
+    activeDayIdx = Math.min(11, Math.max(0, elapsed));
+  }
+
+  // Plan del día (eventos del calendario para activeDayIdx)
+  // Leemos los eventos guardados en localStorage o defaults
+  const events = (S.get("cal2") || DEFAULT_CAL).filter(ev => ev.day === activeDayIdx).sort((a,b) => a.s.localeCompare(b.s));
+
+  // Partidos del día — calculamos qué fecha "real" mirar
+  // Si el viaje no ha empezado, mostramos partidos del día 1 (20 Jun) para que se vea algo útil
+  const dayLabelForMatches = WC_DAYS[activeDayIdx] || WC_DAYS[0];
+  const matchesOfDay = WC_MATCHES.filter(m => m.d === dayLabelForMatches);
+
+  // Próximo partido si no hay hoy
+  const nextMatch = WC_MATCHES.find(m => true); // primer partido (20 Jun)
+
+  return (
+    <>
+      {/* COUNTDOWN HERO */}
+      {!tripStarted ? (
+        <Card style={{ background:`linear-gradient(135deg, ${C.accent}15, ${C.gold}10)`, border:`1.5px solid ${C.accent}40`, textAlign:"center" }}>
+          <div style={{ fontSize:9, color:C.muted, letterSpacing:2 }}>FALTAN</div>
+          <div style={{ fontSize:48, fontWeight:900, color:C.accent, lineHeight:1, margin:"4px 0" }}>{days}</div>
+          <div style={{ fontSize:12, fontWeight:700, color:C.gold, letterSpacing:1 }}>DÍAS PARA NUEVA YORK 🗽</div>
+          <div style={{ fontSize:10, color:C.muted, marginTop:4 }}>20 jun — 1 jul · 5 viajeros · 11 noches</div>
+        </Card>
+      ) : !tripEnded ? (
+        <Card style={{ background:`linear-gradient(135deg, ${C.green}15, ${C.gold}10)`, border:`1.5px solid ${C.green}40`, textAlign:"center" }}>
+          <div style={{ fontSize:9, color:C.muted, letterSpacing:2 }}>VIAJE EN CURSO</div>
+          <div style={{ fontSize:32, fontWeight:900, color:C.green, lineHeight:1, margin:"4px 0" }}>DÍA {activeDayIdx + 1}/12</div>
+          <div style={{ fontSize:13, fontWeight:700, color:C.gold }}>{DAY_TITLES[activeDayIdx]}</div>
+          <div style={{ fontSize:10, color:C.muted, marginTop:4 }}>{DAY_LABELS[activeDayIdx]} · 🗽 Disfrutad NY</div>
+        </Card>
+      ) : (
+        <Card style={{ textAlign:"center" }}>
+          <div style={{ fontSize:14, fontWeight:700 }}>🏁 Viaje completado</div>
+          <div style={{ fontSize:11, color:C.muted, marginTop:4 }}>¡Esperamos que disfrutarais Nueva York!</div>
+        </Card>
+      )}
+
+      {/* TIEMPO EN NY */}
+      <Card>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+          <div style={{ fontSize:13, fontWeight:800 }}>🌆 Tiempo en Nueva York</div>
+          <button onClick={weather.refresh} disabled={weather.loading} style={{
+            padding:"3px 8px", borderRadius:6, border:`1px solid ${C.border}`,
+            background:"transparent", color:C.muted, fontSize:11,
+            cursor:weather.loading?"default":"pointer", opacity:weather.loading?0.4:1
+          }}>{weather.loading ? "⏳" : "🔄"}</button>
+        </div>
+
+        {weather.error && !weather.data && (
+          <div style={{ fontSize:11, color:C.red, padding:8 }}>⚠️ No se ha podido cargar el tiempo</div>
+        )}
+
+        {!weather.data && weather.loading && (
+          <div style={{ fontSize:11, color:C.muted, padding:8, textAlign:"center" }}>Cargando tiempo...</div>
+        )}
+
+        {weather.data && (() => {
+          const cur = weather.data.current;
+          const daily = weather.data.daily;
+          return (
+            <>
+              {/* Tiempo actual */}
+              <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:10 }}>
+                <div style={{ fontSize:48, lineHeight:1 }}>{weatherIcon(cur.weather_code)}</div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:32, fontWeight:900, color:C.gold, lineHeight:1 }}>{Math.round(cur.temperature_2m)}°<span style={{ fontSize:18 }}>C</span></div>
+                  <div style={{ fontSize:11, color:C.muted }}>{weatherDesc(cur.weather_code)}</div>
+                  <div style={{ fontSize:10, color:C.muted, marginTop:2 }}>
+                    Sensación {Math.round(cur.apparent_temperature)}° · 💧{cur.relative_humidity_2m}% · 💨{Math.round(cur.wind_speed_10m)}km/h
+                  </div>
+                </div>
+              </div>
+
+              {/* Predicción 5 días */}
+              <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:8 }}>
+                <div style={{ fontSize:9, color:C.muted, marginBottom:6, letterSpacing:1 }}>PRÓXIMOS DÍAS</div>
+                <div style={{ display:"flex", gap:4, justifyContent:"space-between" }}>
+                  {daily.time.slice(1, 6).map((d, i) => {
+                    const date = new Date(d);
+                    const dayName = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"][date.getDay()];
+                    const code = daily.weather_code[i + 1];
+                    const max = daily.temperature_2m_max[i + 1];
+                    const min = daily.temperature_2m_min[i + 1];
+                    const rain = daily.precipitation_probability_max[i + 1];
+                    return (
+                      <div key={i} style={{ flex:1, textAlign:"center", padding:"5px 2px", background:C.bg, borderRadius:6 }}>
+                        <div style={{ fontSize:9, color:C.muted, fontWeight:700 }}>{dayName}</div>
+                        <div style={{ fontSize:18 }}>{weatherIcon(code)}</div>
+                        <div style={{ fontSize:10, fontWeight:700, color:C.gold }}>{Math.round(max)}°</div>
+                        <div style={{ fontSize:9, color:C.muted }}>{Math.round(min)}°</div>
+                        {rain >= 30 && <div style={{ fontSize:8, color:C.blue }}>💧{rain}%</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          );
+        })()}
+      </Card>
+
+      {/* PARTIDOS DEL DÍA */}
+      <Card>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+          <div style={{ fontSize:13, fontWeight:800 }}>⚽ Mundial · {tripStarted ? `Día ${activeDayIdx + 1}` : "Día 1 (20 Jun)"}</div>
+          <button onClick={() => setTab("wc")} style={{
+            fontSize:9, color:C.accent, background:"transparent",
+            border:`1px solid ${C.accent}40`, borderRadius:12, padding:"2px 8px", cursor:"pointer"
+          }}>Ver todos</button>
+        </div>
+
+        {matchesOfDay.length === 0 ? (
+          <div style={{ fontSize:11, color:C.muted, padding:6 }}>Sin partidos este día</div>
+        ) : (
+          matchesOfDay.slice(0, 4).map((m,i) => {
+            const isSp = m.sp;
+            const isMl = m.ml;
+            const usT = parseMatchTime(m.h);
+            const espT = parseMatchTime(m.esp);
+            const usDayLabel = usT.nextDay ? ` ${nextDow(m.dow)}` : "";
+            const espDayLabel = espT.nextDay ? ` ${nextDow(m.dow)}` : "";
+            return (
+              <div key={i} style={{
+                display:"flex", alignItems:"center", gap:8, padding:"7px 8px", marginBottom:3,
+                background:isSp?`${C.red}10`:isMl?`${C.green}08`:`${C.bg}`,
+                borderRadius:6, borderLeft:`3px solid ${isSp?C.red:isMl?C.green:C.border}`
+              }}>
+                <div style={{ minWidth:54, textAlign:"center" }}>
+                  <div style={{ fontSize:13, fontWeight:800, color:isSp?C.gold:isMl?C.green:C.accent, lineHeight:1.1 }}>
+                    {usT.time}{usDayLabel}
+                  </div>
+                  <div style={{ fontSize:7, fontWeight:700, color:C.muted, marginTop:1 }}>🇺🇸 NY</div>
+                  <div style={{ fontSize:8, color:C.muted, marginTop:2 }}>🇪🇸 {espT.time}{espDayLabel}</div>
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:10, fontWeight:isSp||isMl?800:600, color:isSp?C.gold:C.text, overflow:"hidden", textOverflow:"ellipsis" }}>
+                    {m.a} <span style={{ color:C.muted, fontSize:8 }}>vs</span> {m.b}
+                  </div>
+                  <div style={{ fontSize:8, color:C.muted }}>📍 {m.v}</div>
+                </div>
+                {isMl && <Badge c={C.green}>🎟️</Badge>}
+                {isSp && <Badge c={C.red}>📺</Badge>}
+              </div>
+            );
+          })
+        )}
+      </Card>
+
+      {/* PLAN DEL DÍA */}
+      <Card>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+          <div style={{ fontSize:13, fontWeight:800 }}>📅 {tripStarted ? "Plan de hoy" : "Plan del día 1 (llegada)"}</div>
+          <button onClick={() => setTab("cal")} style={{
+            fontSize:9, color:C.accent, background:"transparent",
+            border:`1px solid ${C.accent}40`, borderRadius:12, padding:"2px 8px", cursor:"pointer"
+          }}>Ver calendario</button>
+        </div>
+        <div style={{ fontSize:11, color:C.muted, marginBottom:6 }}>{DAY_TITLES[activeDayIdx]} · {DAY_LABELS[activeDayIdx]}</div>
+
+        {events.length === 0 ? (
+          <div style={{ fontSize:11, color:C.muted, padding:6 }}>Sin eventos planificados</div>
+        ) : (
+          events.slice(0, 5).map((ev,i) => (
+            <div key={i} style={{ display:"flex", gap:8, padding:"4px 0", borderBottom: i < Math.min(4, events.length - 1) ? `1px solid ${C.border}` : "none" }}>
+              <div style={{ minWidth:42, fontSize:11, fontWeight:700, color:ev.c||C.accent }}>{ev.s}</div>
+              <div style={{ flex:1, fontSize:11 }}>{ev.t}</div>
+            </div>
+          ))
+        )}
+        {events.length > 5 && (
+          <div style={{ fontSize:9, color:C.muted, textAlign:"center", marginTop:6 }}>+ {events.length - 5} eventos más en el calendario</div>
+        )}
+      </Card>
+
+      {/* ACCESOS RÁPIDOS */}
+      <Card>
+        <div style={{ fontSize:13, fontWeight:800, marginBottom:8 }}>⚡ Accesos rápidos</div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6 }}>
+          <button onClick={() => setTab("ctrl")} style={{
+            padding:"10px 8px", borderRadius:8, border:`1px solid ${C.green}40`,
+            background:`${C.green}10`, color:C.green, fontSize:11, fontWeight:700, cursor:"pointer"
+          }}>💬 Grupo / SOS</button>
+          <button onClick={() => setTab("food")} style={{
+            padding:"10px 8px", borderRadius:8, border:`1px solid ${C.gold}40`,
+            background:`${C.gold}10`, color:C.gold, fontSize:11, fontWeight:700, cursor:"pointer"
+          }}>🍕 Restaurantes</button>
+          <button onClick={() => setTab("ai")} style={{
+            padding:"10px 8px", borderRadius:8, border:`1px solid ${C.purple}40`,
+            background:`${C.purple}10`, color:C.purple, fontSize:11, fontWeight:700, cursor:"pointer"
+          }}>🤖 Guía IA</button>
+          <button onClick={() => setTab("ctrl")} style={{
+            padding:"10px 8px", borderRadius:8, border:`1px solid ${C.accent}40`,
+            background:`${C.accent}10`, color:C.accent, fontSize:11, fontWeight:700, cursor:"pointer"
+          }}>💰 Gastos</button>
+        </div>
+      </Card>
+    </>
+  );
+}
+
+// ───────────────────────────────────────────
+// HOME · Datos del viaje (info administrativa)
+// ───────────────────────────────────────────
+function HomeData() {
+  return (
+    <>
       <Card>
         <div style={{ fontSize:14, fontWeight:700, marginBottom:6 }}>✈️ Vuelos · <span style={{ color:C.accent }}>KRLGF</span></div>
         {[["IDA — 20 JUN","IB0211: MAD → JFK","Sale 12:25 · Llega 14:45 T8",C.blue],["VUELTA — 01 JUL","IB0212: JFK → MAD","Sale 16:45 T8 · Llega 02 JUL 06:00",C.accent]].map(([t,r,d,c],i)=>(
@@ -415,7 +748,7 @@ function HomeTab() {
           🚇 <b style={{color:C.text}}>MetroCard 7 días:</b> $34 · 🌡️ 25-32°C + humedad
         </div>
       </Card>
-    </div>
+    </>
   );
 }
 
@@ -1088,16 +1421,222 @@ function DocsSubTab() {
 }
 
 // ═══════════════════════════════════════════
+// 💬 GROUP SUB-TAB (WhatsApp boost dentro de Control)
+// ═══════════════════════════════════════════
+function GroupSubTab({ gps }) {
+  const [meetPoint, setMeetPoint] = useState("");
+
+  // Helpers para construir URLs de WhatsApp
+  // wa.me funciona en móvil y web. Quitamos el "+" del teléfono
+  const waLink = (phone, text = "") => {
+    const clean = phone.replace(/[^0-9]/g, "");
+    return `https://wa.me/${clean}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
+  };
+
+  // Para enviar al grupo necesitamos abrir el grupo manualmente
+  // (WhatsApp no permite enviar texto directamente a un grupo por URL — hay que copiar)
+  const sendToGroup = (text) => {
+    // Copiamos el texto al portapapeles y abrimos el grupo
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
+    window.open(GROUP_WHATSAPP_URL, "_blank");
+  };
+
+  // Mensaje de ubicación con coordenadas + enlace a Maps
+  const buildLocationMsg = (extra = "") => {
+    if (gps) {
+      const mapsUrl = `https://www.google.com/maps?q=${gps.lat},${gps.lng}`;
+      return `📍 Estoy aquí${extra ? ` ${extra}` : ""}: ${mapsUrl}`;
+    }
+    return `📍 Estoy en Nueva York${extra ? ` ${extra}` : ""}`;
+  };
+
+  // SOS message con ubicación
+  const sosMsg = () => {
+    const base = "🆘 NECESITO AYUDA URGENTE";
+    if (gps) {
+      const mapsUrl = `https://www.google.com/maps?q=${gps.lat},${gps.lng}`;
+      return `${base}\n📍 Mi ubicación: ${mapsUrl}\n📞 Llamadme por favor`;
+    }
+    return `${base}\n📞 Llamadme por favor`;
+  };
+
+  // Click handler para mensajes rápidos
+  const sendQuick = (msg) => {
+    if (msg.text.endsWith(": ") && meetPoint) {
+      // Para "Punto de encuentro" añadimos lo escrito
+      sendToGroup(`${msg.icon} ${msg.text}${meetPoint}`);
+    } else {
+      sendToGroup(`${msg.icon} ${msg.text}`);
+    }
+  };
+
+  return (
+    <>
+      {/* HERO BUTTON: Open the WhatsApp group */}
+      <a href={GROUP_WHATSAPP_URL} target="_blank" rel="noopener noreferrer" style={{ textDecoration:"none" }}>
+        <div style={{
+          padding:"14px 16px", borderRadius:12, marginBottom:10,
+          background:`linear-gradient(135deg, #128C7E, #25D366)`,
+          color:"#fff", textAlign:"center", cursor:"pointer",
+          boxShadow:"0 4px 12px rgba(37, 211, 102, 0.25)"
+        }}>
+          <div style={{ fontSize:30, marginBottom:2 }}>💚</div>
+          <div style={{ fontSize:15, fontWeight:800 }}>Abrir grupo de WhatsApp</div>
+          <div style={{ fontSize:10, opacity:0.85, marginTop:2 }}>5 viajeros · Toca para abrir el chat</div>
+        </div>
+      </a>
+
+      {/* SHARE MY LOCATION */}
+      <Card style={{ background:`${C.blue}08`, borderColor:`${C.blue}30` }}>
+        <div style={{ fontSize:13, fontWeight:800, color:C.blue, marginBottom:6 }}>📍 Compartir mi ubicación</div>
+        <div style={{ fontSize:10, color:C.muted, marginBottom:8 }}>
+          {gps ? "✅ GPS activo. Compartirá tu ubicación exacta." : "⚠️ GPS desactivado. Activa el GPS arriba para compartir ubicación exacta."}
+        </div>
+        <button
+          onClick={() => sendToGroup(buildLocationMsg())}
+          disabled={!gps}
+          style={{
+            width:"100%", padding:10, borderRadius:8, border:"none",
+            background: gps ? C.blue : C.border,
+            color: gps ? "#fff" : C.muted,
+            fontSize:12, fontWeight:700, cursor: gps ? "pointer" : "not-allowed",
+            opacity: gps ? 1 : 0.5
+          }}
+        >
+          📍 Enviar mi ubicación al grupo
+        </button>
+      </Card>
+
+      {/* QUICK MESSAGES */}
+      <Card>
+        <div style={{ fontSize:13, fontWeight:800, marginBottom:8 }}>⚡ Mensajes rápidos</div>
+        <div style={{ fontSize:10, color:C.muted, marginBottom:8 }}>
+          Toca para abrir el grupo con el mensaje copiado al portapapeles. Pega con mantener pulsado en WhatsApp.
+        </div>
+
+        {/* Punto de encuentro con input */}
+        <div style={{ display:"flex", gap:6, marginBottom:8 }}>
+          <input
+            type="text"
+            placeholder="Ej: Times Square, Apple Store..."
+            value={meetPoint}
+            onChange={e => setMeetPoint(e.target.value)}
+            style={{ ...inputStyle, fontSize:12 }}
+          />
+        </div>
+
+        {QUICK_MESSAGES.map((msg, i) => (
+          <button
+            key={i}
+            onClick={() => sendQuick(msg)}
+            disabled={msg.text.endsWith(": ") && !meetPoint.trim()}
+            style={{
+              width:"100%", padding:"9px 12px", borderRadius:8, marginBottom:5,
+              border:`1px solid ${C.border}`, background:C.card,
+              color:C.text, fontSize:12, fontWeight:600, cursor:"pointer",
+              textAlign:"left",
+              opacity: (msg.text.endsWith(": ") && !meetPoint.trim()) ? 0.4 : 1
+            }}
+          >
+            <span style={{ marginRight:8 }}>{msg.icon}</span>
+            {msg.text}{msg.text.endsWith(": ") && meetPoint ? meetPoint : ""}
+          </button>
+        ))}
+      </Card>
+
+      {/* SOS BUTTON */}
+      <Card style={{ background:`${C.red}08`, borderColor:`${C.red}40` }}>
+        <div style={{ fontSize:13, fontWeight:800, color:C.red, marginBottom:6 }}>🆘 Emergencia</div>
+        <div style={{ fontSize:10, color:C.muted, marginBottom:8 }}>
+          Envía un mensaje urgente al grupo {gps ? "con tu ubicación GPS" : "(activa GPS para incluir ubicación)"}
+        </div>
+        <button
+          onClick={() => sendToGroup(sosMsg())}
+          style={{
+            width:"100%", padding:12, borderRadius:8, border:"none",
+            background: C.red, color:"#fff",
+            fontSize:13, fontWeight:800, cursor:"pointer",
+            boxShadow:"0 2px 8px rgba(239, 68, 68, 0.3)"
+          }}
+        >
+          🆘 PEDIR AYUDA AL GRUPO
+        </button>
+      </Card>
+
+      {/* INDIVIDUAL CONTACTS */}
+      <Card>
+        <div style={{ fontSize:13, fontWeight:800, marginBottom:8 }}>👥 Contactos individuales</div>
+        <div style={{ fontSize:10, color:C.muted, marginBottom:10 }}>
+          Llamar o enviar WhatsApp privado a cada viajero
+        </div>
+        {TRAVELERS.map(t => (
+          <div key={t.id} style={{
+            display:"flex", alignItems:"center", gap:8,
+            padding:"8px 10px", marginBottom:5,
+            background:C.card, borderRadius:8, border:`1px solid ${C.border}`
+          }}>
+            <span style={{ fontSize:24 }}>{t.icon}</span>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:13, fontWeight:700 }}>{t.name}</div>
+              <div style={{ fontSize:10, color:C.muted }}>{t.phone}</div>
+            </div>
+            <a href={`tel:${t.phone.replace(/\s/g, "")}`} title={`Llamar a ${t.name}`} style={{ textDecoration:"none" }}>
+              <button style={{
+                padding:"7px 10px", borderRadius:7, border:"none",
+                background:C.blue, color:"#fff",
+                fontSize:11, fontWeight:700, cursor:"pointer"
+              }}>📞</button>
+            </a>
+            {t.wa && (
+              <a href={waLink(t.phone)} target="_blank" rel="noopener noreferrer" title={`WhatsApp con ${t.name}`} style={{ textDecoration:"none" }}>
+                <button style={{
+                  padding:"7px 10px", borderRadius:7, border:"none",
+                  background:"#25D366", color:"#fff",
+                  fontSize:11, fontWeight:700, cursor:"pointer"
+                }}>💬</button>
+              </a>
+            )}
+          </div>
+        ))}
+      </Card>
+
+      {/* HELP TIP */}
+      <Card style={{ background:`${C.gold}08`, borderColor:`${C.gold}25` }}>
+        <div style={{ fontSize:11, fontWeight:700, color:C.gold, marginBottom:4 }}>💡 Cómo funcionan los mensajes rápidos</div>
+        <div style={{ fontSize:10, color:C.muted, lineHeight:1.6 }}>
+          Cuando pulsas un mensaje rápido, se <b style={{ color:C.text }}>copia automáticamente</b> al portapapeles y se abre el grupo. En el chat del grupo, mantén pulsado en el campo de texto y elige <b style={{ color:C.text }}>"Pegar"</b>. Después dale a enviar.<br/><br/>
+          ⚠️ WhatsApp no permite enviar texto a grupos directamente desde un enlace por seguridad. Por eso hace falta el paso de pegar.
+        </div>
+      </Card>
+    </>
+  );
+}
+
+// ═══════════════════════════════════════════
 // 💰 CONTROL TAB
 // ═══════════════════════════════════════════
-function ControlTab() {
+function ControlTab({ gps, fx }) {
   const [sub, setSub] = useState("budget");
-  const [expenses, setExpenses] = useState(() => S.get("exp") || [
-    { name:"Vuelos (5 pers)", amount:5050.25, cat:"transport", fixed:true },
-    { name:"Seguro IMAWAY", amount:392.87, cat:"other", fixed:true },
-    { name:"Comisión Sequra", amount:147.00, cat:"other", fixed:true },
-  ]);
-  const [newN, setNewN] = useState(""); const [newA, setNewA] = useState(""); const [newC, setNewC] = useState("food");
+  const [expenseFilter, setExpenseFilter] = useState("all");
+  const [expWarning, setExpWarning] = useState("");
+  const [expenses, setExpenses] = useState(() => {
+    const stored = S.get("exp");
+    if (stored) {
+      // Migración: gastos antiguos sin currency se asumen EUR (los pre-viaje)
+      return stored.map(e => e.currency ? e : { ...e, currency: "EUR" });
+    }
+    return [
+      { name:"Vuelos (5 pers)",  amount:5050.25, cat:"transport", fixed:true, currency:"EUR" },
+      { name:"Seguro IMAWAY",    amount:392.87,  cat:"other",     fixed:true, currency:"EUR" },
+      { name:"Comisión Sequra",  amount:147.00,  cat:"other",     fixed:true, currency:"EUR" },
+    ];
+  });
+  const [newN, setNewN] = useState("");
+  const [newA, setNewA] = useState("");
+  const [newC, setNewC] = useState("food");
+  const [newCur, setNewCur] = useState("USD"); // moneda por defecto: USD (estaremos en NY)
   const [checklist, setChecklist] = useState(() => S.get("chk") || [
     { t:"✅ Pasaporte Rosa renovado", d:true }, { t:"Tramitar ESTA (14$/pers)", d:false },
     { t:"Seguro ✓", d:true }, { t:"Vuelos ✓", d:true }, { t:"Airbnb ✓", d:true },
@@ -1113,43 +1652,211 @@ function ControlTab() {
   useEffect(() => { S.set("notes", notes); }, [notes]);
 
   const cats = [{id:"transport",l:"🚇 Transporte",c:C.blue},{id:"food",l:"🍕 Comida",c:C.gold},{id:"tickets",l:"🎟️ Entradas",c:C.purple},{id:"shopping",l:"🛍️ Compras",c:C.pink},{id:"football",l:"⚽ Mundial",c:C.green},{id:"other",l:"📦 Otros",c:C.muted}];
-  const total = expenses.reduce((s,e) => s+(e.amount||0), 0);
-  const addExp = () => { if (!newN.trim()||!newA) return; setExpenses([...expenses, { name:newN.trim(), amount:parseFloat(newA), cat:newC }]); setNewN(""); setNewA(""); };
+
+  // Devuelve el importe del gasto en EUR (usa amountEur si existe, si no convierte sobre la marcha o pasa tal cual si es EUR)
+  const toEur = (e) => {
+    if (!e || !e.amount) return 0;
+    if (e.currency === "USD") {
+      return e.amountEur != null ? e.amountEur : e.amount * fx.rate;
+    }
+    return e.amount; // EUR
+  };
+
+  // Totales en EUR (todo convertido)
+  const total = expenses.reduce((s,e) => s + toEur(e), 0);
+  const filteredExpenses = expenseFilter === "all" ? expenses : expenses.filter(e => e.cat === expenseFilter);
+  const filteredTotal = filteredExpenses.reduce((s,e) => s + toEur(e), 0);
+  const filteredPercent = total > 0 ? (filteredTotal / total) * 100 : 0;
+
+  // Resúmenes por moneda (solo importes nativos)
+  const totalUsd = expenses.filter(e => e.currency === "USD").reduce((s,e) => s + (e.amount||0), 0);
+  const totalEurNative = expenses.filter(e => e.currency !== "USD").reduce((s,e) => s + (e.amount||0), 0);
+  const hasBothCurrencies = totalUsd > 0 && totalEurNative > 0;
+
+  // Conversión en vivo del input mientras se escribe (preview)
+  const previewEur = (newA && newCur === "USD") ? parseFloat(newA) * fx.rate : null;
+  const previewUsd = (newA && newCur === "EUR") ? parseFloat(newA) / fx.rate : null;
+
+  const addExp = () => {
+    if (!newN.trim() && !newA) { setExpWarning("⚠️ Escribe una descripción y un importe"); return; }
+    if (!newN.trim()) { setExpWarning("⚠️ Falta la descripción del gasto"); return; }
+    if (!newA) { setExpWarning("⚠️ Falta el importe"); return; }
+    const amt = parseFloat(newA);
+    const newExp = {
+      name: newN.trim(),
+      amount: amt,
+      cat: newC,
+      currency: newCur,
+    };
+    // Si es USD, guardamos también el equivalente en EUR con la tasa del momento
+    if (newCur === "USD") {
+      newExp.amountEur = amt * fx.rate;
+      newExp.fxRate = fx.rate;
+      newExp.addedAt = Date.now();
+    }
+    setExpenses([...expenses, newExp]);
+    setNewN(""); setNewA(""); setExpWarning("");
+  };
   const doneN = checklist.filter(c=>c.d).length;
 
   return (
     <div>
       <div style={{ display:"flex", gap:4, padding:"10px 14px 6px", background:C.bg2, overflowX:"auto" }}>
-        {[["budget","💰 Gastos"],["check","✅ Check"],["notes","📝 Notas"],["docs","📁 Docs"]].map(([k,l]) => (
+        {[["budget","💰 Gastos"],["check","✅ Check"],["notes","📝 Notas"],["docs","📁 Docs"],["group","💬 Grupo"]].map(([k,l]) => (
           <button key={k} onClick={() => setSub(k)} style={{ flex:"1 1 0", minWidth:70, padding:"7px", borderRadius:8, border:`1px solid ${sub===k?C.accent:C.border}`, background:sub===k?`${C.accent}18`:"transparent", color:sub===k?C.accent:C.muted, fontSize:10, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>{l}</button>
         ))}
       </div>
       <div style={{ padding:"12px 14px" }}>
         {sub === "budget" && <>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:14 }}>
-            {[["TOTAL",total,C.accent],["POR PERSONA",total/5,C.green]].map(([l,v,c],i) => (
+          {/* Tarjetas TOTAL y POR PERSONA (siempre en EUR equivalente, suma de TODOS los gastos) */}
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:10 }}>
+            {[["TOTAL VIAJE",total,C.accent],["POR PERSONA",total/5,C.green]].map(([l,v,c],i) => (
               <div key={i} style={{ background:`${c}12`, borderRadius:10, padding:12, textAlign:"center", border:`1px solid ${c}25` }}>
                 <div style={{ fontSize:9, color:c, fontWeight:700 }}>{l}</div>
                 <div style={{ fontSize:20, fontWeight:900, color:c }}>{v.toFixed(2)} €</div>
+                <div style={{ fontSize:8, color:C.muted, marginTop:1 }}>en EUR equivalente</div>
               </div>
             ))}
           </div>
+
+          {/* Resumen por moneda (solo si hay gastos en ambas) */}
+          {hasBothCurrencies && (
+            <div style={{ display:"flex", gap:6, marginBottom:10 }}>
+              <div style={{ flex:1, padding:"7px 9px", borderRadius:8, background:`${C.blue}10`, border:`1px solid ${C.blue}30` }}>
+                <div style={{ fontSize:9, color:C.blue, fontWeight:700 }}>🇪🇸 PRE-VIAJE (EUR)</div>
+                <div style={{ fontSize:14, fontWeight:800, color:C.blue }}>{totalEurNative.toFixed(2)} €</div>
+              </div>
+              <div style={{ flex:1, padding:"7px 9px", borderRadius:8, background:`${C.green}10`, border:`1px solid ${C.green}30` }}>
+                <div style={{ fontSize:9, color:C.green, fontWeight:700 }}>🇺🇸 EN NY (USD)</div>
+                <div style={{ fontSize:14, fontWeight:800, color:C.green }}>$ {totalUsd.toFixed(2)}</div>
+                <div style={{ fontSize:8, color:C.muted }}>≈ {(totalUsd * fx.rate).toFixed(2)} €</div>
+              </div>
+            </div>
+          )}
+
+          {/* Banda de filtrado activo (solo si hay filtro) */}
+          {expenseFilter !== "all" && (() => {
+            const ct = cats.find(c => c.id === expenseFilter);
+            return (
+              <div style={{
+                padding:"8px 12px", borderRadius:8, marginBottom:10,
+                background:`${ct.c}10`, border:`1px solid ${ct.c}30`,
+              }}>
+                <div style={{ fontSize:11, color:C.muted }}>
+                  Filtrando <span style={{ color:ct.c, fontWeight:700 }}>{ct.l}</span>:{" "}
+                  <span style={{ color:ct.c, fontWeight:800 }}>{filteredTotal.toFixed(2)} €</span>{" "}
+                  <span style={{ color:C.muted, fontSize:10 }}>
+                    ({filteredPercent.toFixed(1)}% del total · {(filteredTotal/5).toFixed(2)} €/persona)
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Chips de filtro por categoría */}
+          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:12 }}>
+            <button onClick={() => setExpenseFilter("all")} style={{
+              padding:"4px 8px", borderRadius:14,
+              border:`1px solid ${expenseFilter==="all"?C.accent:C.border}`,
+              background:expenseFilter==="all"?`${C.accent}18`:"transparent",
+              color:expenseFilter==="all"?C.accent:C.muted,
+              fontSize:10, fontWeight:600, cursor:"pointer"
+            }}>Todos ({expenses.length})</button>
+            {cats.map(c => {
+              const count = expenses.filter(e => e.cat === c.id).length;
+              if (count === 0) return null;
+              return (
+                <button key={c.id} onClick={() => setExpenseFilter(c.id)} style={{
+                  padding:"4px 8px", borderRadius:14,
+                  border:`1px solid ${expenseFilter===c.id?c.c:C.border}`,
+                  background:expenseFilter===c.id?`${c.c}18`:"transparent",
+                  color:expenseFilter===c.id?c.c:C.muted,
+                  fontSize:10, fontWeight:600, cursor:"pointer"
+                }}>{c.l} ({count})</button>
+              );
+            })}
+          </div>
+
+          {/* Formulario para añadir gasto */}
           <Card>
-            <input style={{ ...inputStyle, marginBottom:6 }} placeholder="Descripción" value={newN} onChange={e => setNewN(e.target.value)} />
+            <div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:6 }}>➕ Nuevo gasto</div>
+
+            {/* Selector de moneda */}
             <div style={{ display:"flex", gap:6, marginBottom:6 }}>
-              <input style={{ ...inputStyle, width:"35%" }} placeholder="€" type="number" step="0.01" value={newA} onChange={e => setNewA(e.target.value)} onKeyDown={e => e.key==="Enter" && addExp()} />
+              {[["USD","🇺🇸 USD ($)",C.green],["EUR","🇪🇸 EUR (€)",C.blue]].map(([k,l,col]) => (
+                <button key={k} onClick={() => setNewCur(k)} style={{
+                  flex:1, padding:"7px", borderRadius:8,
+                  border:`1px solid ${newCur===k?col:C.border}`,
+                  background:newCur===k?`${col}18`:"transparent",
+                  color:newCur===k?col:C.muted,
+                  fontSize:11, fontWeight:700, cursor:"pointer"
+                }}>{l}</button>
+              ))}
+            </div>
+
+            <input style={{ ...inputStyle, marginBottom:6 }} placeholder="Descripción (ej: Pizza Joe's)" value={newN} onChange={e => { setNewN(e.target.value); if (expWarning) setExpWarning(""); }} />
+            <div style={{ display:"flex", gap:6, marginBottom:6 }}>
+              <input
+                style={{ ...inputStyle, width:"35%" }}
+                placeholder={newCur === "USD" ? "$" : "€"}
+                type="number"
+                step="0.01"
+                value={newA}
+                onChange={e => { setNewA(e.target.value); if (expWarning) setExpWarning(""); }}
+                onKeyDown={e => e.key==="Enter" && addExp()}
+              />
               <select style={{ ...inputStyle, width:"65%" }} value={newC} onChange={e => setNewC(e.target.value)}>{cats.map(c => <option key={c.id} value={c.id}>{c.l}</option>)}</select>
             </div>
+
+            {/* Conversión en vivo */}
+            {newA && (
+              <div style={{ fontSize:11, color:C.muted, marginBottom:6, padding:"5px 9px", background:`${C.gold}08`, borderRadius:6, textAlign:"center" }}>
+                {newCur === "USD" && previewEur != null && (
+                  <>💱 ${parseFloat(newA).toFixed(2)} ≈ <span style={{ color:C.gold, fontWeight:700 }}>{previewEur.toFixed(2)} €</span> <span style={{ fontSize:9 }}>(tasa {fx.rate.toFixed(4)})</span></>
+                )}
+                {newCur === "EUR" && previewUsd != null && (
+                  <>💱 €{parseFloat(newA).toFixed(2)} ≈ <span style={{ color:C.gold, fontWeight:700 }}>$ {previewUsd.toFixed(2)}</span> <span style={{ fontSize:9 }}>(tasa {fx.rate.toFixed(4)})</span></>
+                )}
+              </div>
+            )}
+
+            {expWarning && (
+              <div style={{ fontSize:11, color:C.red, padding:"6px 10px", background:`${C.red}10`, border:`1px solid ${C.red}30`, borderRadius:6, marginBottom:6 }}>
+                {expWarning}
+              </div>
+            )}
             <button onClick={addExp} style={{ width:"100%", padding:10, borderRadius:8, border:"none", background:C.accent, color:"#fff", fontWeight:700, cursor:"pointer" }}>Añadir gasto</button>
           </Card>
-          {expenses.map((e,i) => {
+
+          {/* Lista filtrada */}
+          {filteredExpenses.length === 0 && expenseFilter !== "all" && (
+            <div style={{ textAlign:"center", padding:"20px 12px", color:C.muted, fontSize:12 }}>
+              Sin gastos en esta categoría todavía
+            </div>
+          )}
+          {filteredExpenses.map((e) => {
+            const i = expenses.indexOf(e);
             const ct = cats.find(c=>c.id===e.cat);
+            const isUsd = e.currency === "USD";
+            const eurEquiv = toEur(e);
             return (
-              <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 14px", borderBottom:`1px solid ${C.border}` }}>
-                <div><div style={{ fontSize:12, fontWeight:600 }}>{e.name}</div><div style={{ fontSize:10, color:ct?.c }}>{ct?.l}</div></div>
-                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                  <span style={{ fontSize:13, fontWeight:700 }}>{e.amount.toFixed(2)} €</span>
-                  {!e.fixed && <button onClick={() => setExpenses(expenses.filter((_,j)=>j!==i))} style={{ background:"none", border:"none", color:C.red, cursor:"pointer" }}>✕</button>}
+              <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 14px", borderBottom:`1px solid ${C.border}`, gap:8 }}>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:12, fontWeight:600 }}>{e.name}</div>
+                  <div style={{ fontSize:10, color:ct?.c }}>{ct?.l}</div>
+                </div>
+                <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+                  <div style={{ textAlign:"right" }}>
+                    {isUsd ? (
+                      <>
+                        <div style={{ fontSize:13, fontWeight:700, color:C.green }}>$ {e.amount.toFixed(2)}</div>
+                        <div style={{ fontSize:9, color:C.muted }}>≈ {eurEquiv.toFixed(2)} €</div>
+                      </>
+                    ) : (
+                      <div style={{ fontSize:13, fontWeight:700 }}>{e.amount.toFixed(2)} €</div>
+                    )}
+                  </div>
+                  {!e.fixed && <button onClick={() => setExpenses(expenses.filter((_,j)=>j!==i))} style={{ background:"none", border:"none", color:C.red, cursor:"pointer", fontSize:12 }}>✕</button>}
                 </div>
               </div>
             );
@@ -1173,6 +1880,7 @@ function ControlTab() {
           <Card><textarea style={{ ...inputStyle, minHeight:250, resize:"vertical", lineHeight:1.6 }} placeholder="Notas, ideas, links..." value={notes} onChange={e => setNotes(e.target.value)} /></Card>
         )}
         {sub === "docs" && <DocsSubTab />}
+        {sub === "group" && <GroupSubTab gps={gps} />}
       </div>
     </div>
   );
@@ -1282,18 +1990,24 @@ function WorldCupTab() {
             <div style={{ fontSize:10, color:C.muted }}>con Cabo Verde, Arabia Saudí y Uruguay</div>
           </div>
         </div>
-        {spainMatches.map((m,i) => (
-          <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderTop:i?`1px solid ${C.border}`:"none" }}>
-            <div>
-              <span style={{ fontSize:11, fontWeight:700, color:C.text }}>{m.a} vs {m.b}</span>
-              <div style={{ fontSize:9, color:C.muted }}>{m.d} ({m.dow}) · {m.v}</div>
+        {spainMatches.map((m,i) => {
+          const usT = parseMatchTime(m.h);
+          const espT = parseMatchTime(m.esp);
+          const usDayLabel = usT.nextDay ? ` ${nextDow(m.dow)}` : "";
+          const espDayLabel = espT.nextDay ? ` ${nextDow(m.dow)}` : "";
+          return (
+            <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderTop:i?`1px solid ${C.border}`:"none" }}>
+              <div>
+                <span style={{ fontSize:11, fontWeight:700, color:C.text }}>{m.a} vs {m.b}</span>
+                <div style={{ fontSize:9, color:C.muted }}>{m.d} ({m.dow}) · {m.v}</div>
+              </div>
+              <div style={{ textAlign:"right" }}>
+                <div style={{ fontSize:13, fontWeight:800, color:C.accent }}>🇺🇸 {usT.time}{usDayLabel}</div>
+                <div style={{ fontSize:9, color:C.gold }}>🇪🇸 {espT.time}{espDayLabel}</div>
+              </div>
             </div>
-            <div style={{ textAlign:"right" }}>
-              <div style={{ fontSize:13, fontWeight:800, color:C.accent }}>{m.h} ET</div>
-              <div style={{ fontSize:9, color:C.gold }}>🇪🇸 {m.esp} ESP</div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
         <div style={{ marginTop:6, padding:"6px 8px", background:`${C.gold}12`, borderRadius:6, fontSize:9, color:C.gold }}>
           ⚠️ España NO juega en NY. Todos sus partidos son en Atlanta y Guadalajara → ver en bares deportivos
         </div>
@@ -1307,18 +2021,24 @@ function WorldCupTab() {
             <div style={{ fontSize:10, color:C.muted }}>A 30min en bus/tren desde Jersey City · Final el 19 Jul</div>
           </div>
         </div>
-        {metlifeMatches.map((m,i) => (
-          <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderTop:i?`1px solid ${C.border}`:"none" }}>
-            <div>
-              <span style={{ fontSize:11, fontWeight:700, color:C.text }}>{m.a} vs {m.b}</span>
-              <div style={{ fontSize:9, color:C.muted }}>{m.d} ({m.dow}) · {m.g === "R32" ? "Eliminatoria" : `Grupo ${m.g}`}</div>
+        {metlifeMatches.map((m,i) => {
+          const usT = parseMatchTime(m.h);
+          const espT = parseMatchTime(m.esp);
+          const usDayLabel = usT.nextDay ? ` ${nextDow(m.dow)}` : "";
+          const espDayLabel = espT.nextDay ? ` ${nextDow(m.dow)}` : "";
+          return (
+            <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderTop:i?`1px solid ${C.border}`:"none" }}>
+              <div>
+                <span style={{ fontSize:11, fontWeight:700, color:C.text }}>{m.a} vs {m.b}</span>
+                <div style={{ fontSize:9, color:C.muted }}>{m.d} ({m.dow}) · {m.g === "R32" ? "Eliminatoria" : `Grupo ${m.g}`}</div>
+              </div>
+              <div style={{ textAlign:"right" }}>
+                <div style={{ fontSize:13, fontWeight:800, color:C.green }}>🇺🇸 {usT.time}{usDayLabel}</div>
+                <div style={{ fontSize:9, color:C.gold }}>🇪🇸 {espT.time}{espDayLabel}</div>
+              </div>
             </div>
-            <div style={{ textAlign:"right" }}>
-              <div style={{ fontSize:13, fontWeight:800, color:C.green }}>{m.h} ET</div>
-              <div style={{ fontSize:9, color:C.gold }}>🇪🇸 {m.esp} ESP</div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
         <div style={{ marginTop:6, padding:"6px 8px", background:`${C.green}12`, borderRadius:6, fontSize:9, color:C.green }}>
           🎟️ Entradas en fifa.com/tickets · PATH Journal Sq → Hoboken → bus NJ Transit a MetLife
         </div>
@@ -1370,15 +2090,21 @@ function WorldCupTab() {
                   const isSp = m.sp;
                   const isMl = m.ml;
                   const isKO = m.g === "R32";
+                  const usT = parseMatchTime(m.h);
+                  const espT = parseMatchTime(m.esp);
+                  const usDayLabel = usT.nextDay ? ` ${nextDow(m.dow)}` : "";
+                  const espDayLabel = espT.nextDay ? ` ${nextDow(m.dow)}` : "";
                   return (
                     <div key={i} style={{
                       display:"flex", alignItems:"center", gap:8, padding:"7px 10px", marginBottom:1,
                       background:isSp?`${C.red}12`:isMl?`${C.green}0a`:C.card,
                       borderRadius:6, borderLeft:`3px solid ${isSp?C.red:isMl?C.green:isKO?C.purple:C.border}`
                     }}>
-                      <div style={{ minWidth:48, textAlign:"center" }}>
-                        <div style={{ fontSize:13, fontWeight:800, color:isSp?C.gold:isMl?C.green:C.accent }}>{m.h}</div>
-                        <div style={{ fontSize:8, color:C.muted }}>ET</div>
+                      <div style={{ minWidth:58, textAlign:"center" }}>
+                        <div style={{ fontSize:13, fontWeight:800, color:isSp?C.gold:isMl?C.green:C.accent, lineHeight:1.1 }}>
+                          {usT.time}{usDayLabel}
+                        </div>
+                        <div style={{ fontSize:8, color:C.muted, marginTop:1 }}>🇺🇸 NY</div>
                       </div>
                       <div style={{ flex:1 }}>
                         <div style={{ fontSize:11, fontWeight:isSp||isMl?800:600, color:isSp?C.gold:C.text }}>
@@ -1389,11 +2115,10 @@ function WorldCupTab() {
                           <span>📍 {m.v}</span>
                         </div>
                       </div>
-                      <div style={{ textAlign:"right", minWidth:44 }}>
-                        <div style={{ fontSize:9, color:C.gold }}>{m.esp}</div>
-                        <div style={{ fontSize:7, color:C.muted }}>🇪🇸 ESP</div>
-                        {isMl && <Badge c={C.green}>IR 🎟️</Badge>}
-                        {isSp && <Badge c={C.red}>TV 📺</Badge>}
+                      <div style={{ textAlign:"right", minWidth:48 }}>
+                        <div style={{ fontSize:10, color:C.gold, fontWeight:700 }}>🇪🇸 {espT.time}{espDayLabel}</div>
+                        {isMl && <div style={{ marginTop:2 }}><Badge c={C.green}>IR 🎟️</Badge></div>}
+                        {isSp && <div style={{ marginTop:2 }}><Badge c={C.red}>TV 📺</Badge></div>}
                       </div>
                     </div>
                   );
@@ -1407,8 +2132,9 @@ function WorldCupTab() {
       <Card style={{ marginTop:8, background:`${C.accent}08` }}>
         <div style={{ fontSize:10, color:C.muted, lineHeight:1.6 }}>
           <div style={{ fontWeight:700, color:C.accent, marginBottom:4 }}>📌 Info útil</div>
-          <div>🕐 <strong>ET</strong> = Eastern Time (hora de Nueva York)</div>
-          <div>🇪🇸 <strong>ESP</strong> = hora española (ET + 6 horas)</div>
+          <div>🇺🇸 <strong>NY</strong> = hora local de Nueva York (Eastern Time)</div>
+          <div>🇪🇸 <strong>ESP</strong> = hora española (NY + 6 horas)</div>
+          <div>📅 Si la hora pone "Mié" después → el partido empieza esa madrugada (día siguiente)</div>
           <div>🏟️ MetLife está en East Rutherford, NJ — accesible desde Jersey City</div>
           <div>📺 Partidos de España → ver en bares: Legends, Nevada Smiths, Boqueria</div>
           <div>🎟️ Entradas: <strong>fifa.com/tickets</strong></div>
@@ -1467,14 +2193,14 @@ export default function App() {
         </div>
       )}
 
-      {tab === "home" && <HomeTab />}
+      {tab === "home" && <HomeTab setTab={setTab} />}
       {tab === "cal" && <CalendarTab gps={gps.pos} />}
       {tab === "wc" && <WorldCupTab />}
       {tab === "movies" && <MoviesTab gps={gps.pos} />}
       {tab === "events" && <EventsTab gps={gps.pos} />}
       {tab === "food" && <FoodTab gps={gps.pos} />}
       {tab === "ai" && <AITab />}
-      {tab === "ctrl" && <ControlTab />}
+      {tab === "ctrl" && <ControlTab gps={gps.pos} fx={fx} />}
 
       <nav style={{ display:"flex", position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:500, background:`${C.bg}f0`, backdropFilter:"blur(20px)", borderTop:`1px solid ${C.border}`, zIndex:999 }}>
         {TABS.map(t => (
