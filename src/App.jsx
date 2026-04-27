@@ -47,6 +47,43 @@ function useGPS() {
   return { pos, active, start, stop };
 }
 
+// Hook para tasa de cambio USD/EUR (API frankfurter.app)
+function useExchangeRate() {
+  const cached = S.get("fx") || null;
+  const [rate, setRate] = useState(cached?.rate || 0.92); // fallback inicial
+  const [updated, setUpdated] = useState(cached?.updated || null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const fetchRate = useCallback(async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      // frankfurter.app: 1 USD a EUR
+      const res = await fetch("https://api.frankfurter.app/latest?from=USD&to=EUR");
+      if (!res.ok) throw new Error("API error");
+      const data = await res.json();
+      const newRate = data.rates?.EUR;
+      if (typeof newRate !== "number") throw new Error("No rate");
+      const now = Date.now();
+      setRate(newRate);
+      setUpdated(now);
+      S.set("fx", { rate: newRate, updated: now });
+    } catch (e) {
+      setError(true);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    // refresca si nunca o si pasaron más de 6 horas
+    const stale = !updated || (Date.now() - updated) > 6 * 3600 * 1000;
+    if (stale) fetchRate();
+  }, [fetchRate, updated]);
+
+  return { rate, updated, loading, error, refresh: fetchRate };
+}
+
 // ═══════════════════════════════════════════
 // THEME
 // ═══════════════════════════════════════════
@@ -206,6 +243,112 @@ const SOS_PHONES = [
   { name:"Consulado España (NY)",       phone:"+1 212 355 4080", note:"150 E 58th St, Manhattan", c:C.gold },
   { name:"Iberia (USA)",                phone:"+1 800 772 4642", note:"Cambios y problemas con vuelos", c:C.blue },
 ];
+
+// ═══════════════════════════════════════════
+// 💱 CURRENCY CONVERTER (mini widget plegable)
+// ═══════════════════════════════════════════
+function CurrencyButton({ fx, open, onToggle }) {
+  return (
+    <button onClick={onToggle} title="Conversor de moneda" style={{
+      padding:"6px 10px", borderRadius:8,
+      border:`1px solid ${open ? C.gold : C.border}`,
+      background: open ? `${C.gold}18` : "transparent",
+      color: open ? C.gold : C.muted,
+      fontSize:10, fontWeight:700, cursor:"pointer",
+      whiteSpace:"nowrap"
+    }}>
+      💱 1$={fx.rate.toFixed(2)}€
+    </button>
+  );
+}
+
+function CurrencyPanel({ fx }) {
+  const [amount, setAmount] = useState(100);
+  const [direction, setDirection] = useState("usd_to_eur");
+
+  const isUsdToEur = direction === "usd_to_eur";
+  const result = isUsdToEur ? amount * fx.rate : amount / fx.rate;
+  const fromSym = isUsdToEur ? "$" : "€";
+  const toSym = isUsdToEur ? "€" : "$";
+  const fromCol = isUsdToEur ? C.green : C.blue;
+  const toCol = isUsdToEur ? C.blue : C.green;
+
+  const minutesAgo = fx.updated ? Math.floor((Date.now() - fx.updated) / 60000) : null;
+  const updatedText = !fx.updated ? "—" : minutesAgo < 1 ? "ahora" : minutesAgo < 60 ? `hace ${minutesAgo}min` : minutesAgo < 1440 ? `hace ${Math.floor(minutesAgo/60)}h` : `hace ${Math.floor(minutesAgo/1440)}d`;
+
+  const quickAmounts = [5, 10, 20, 50, 100];
+
+  return (
+    <div style={{
+      padding:"10px 14px 12px", background:`${C.gold}08`,
+      borderBottom:`1px solid ${C.gold}30`
+    }}>
+      {/* Cabecera con info y refresh */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+        <div>
+          <div style={{ fontSize:11, fontWeight:800, color:C.gold }}>💱 Conversor USD ↔ EUR</div>
+          <div style={{ fontSize:9, color:C.muted, marginTop:1 }}>
+            {fx.error ? "⚠️ Sin conexión, tasa cacheada" : `1 USD = ${fx.rate.toFixed(4)} EUR · Actualizado ${updatedText}`}
+          </div>
+        </div>
+        <button onClick={fx.refresh} disabled={fx.loading} style={{
+          padding:"4px 8px", borderRadius:6, border:`1px solid ${C.border}`,
+          background:"transparent", color:C.muted, fontSize:11, cursor:fx.loading?"default":"pointer",
+          opacity:fx.loading?0.4:1
+        }}>{fx.loading ? "⏳" : "🔄"}</button>
+      </div>
+
+      {/* Switch de dirección */}
+      <div style={{ display:"flex", gap:4, marginBottom:8 }}>
+        {[["usd_to_eur","🇺🇸 → 🇪🇺  $ a €"],["eur_to_usd","🇪🇺 → 🇺🇸  € a $"]].map(([k,l]) => (
+          <button key={k} onClick={() => setDirection(k)} style={{
+            flex:1, padding:"6px", borderRadius:7,
+            border:`1px solid ${direction===k?C.gold:C.border}`,
+            background:direction===k?`${C.gold}18`:"transparent",
+            color:direction===k?C.gold:C.muted,
+            fontSize:10, fontWeight:700, cursor:"pointer"
+          }}>{l}</button>
+        ))}
+      </div>
+
+      {/* Input + Resultado */}
+      <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:8 }}>
+        <div style={{ flex:1, position:"relative" }}>
+          <span style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", fontSize:14, fontWeight:800, color:fromCol }}>{fromSym}</span>
+          <input
+            type="number"
+            value={amount}
+            onChange={e => setAmount(parseFloat(e.target.value) || 0)}
+            style={{ ...inputStyle, paddingLeft:26, fontSize:15, fontWeight:700, textAlign:"right" }}
+          />
+        </div>
+        <span style={{ fontSize:18, color:C.muted }}>=</span>
+        <div style={{ flex:1, padding:"10px 12px", borderRadius:10, border:`1px solid ${toCol}40`, background:`${toCol}10`, fontSize:15, fontWeight:800, color:toCol, textAlign:"right" }}>
+          {toSym} {result.toFixed(2)}
+        </div>
+      </div>
+
+      {/* Botones rápidos */}
+      <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
+        <span style={{ fontSize:9, color:C.muted, alignSelf:"center", marginRight:2 }}>Rápido:</span>
+        {quickAmounts.map(a => (
+          <button key={a} onClick={() => setAmount(a)} style={{
+            padding:"4px 8px", borderRadius:14,
+            border:`1px solid ${amount===a?fromCol:C.border}`,
+            background:amount===a?`${fromCol}18`:"transparent",
+            color:amount===a?fromCol:C.muted,
+            fontSize:10, fontWeight:700, cursor:"pointer"
+          }}>{fromSym}{a}</button>
+        ))}
+      </div>
+
+      {/* Tip */}
+      <div style={{ fontSize:9, color:C.muted, marginTop:8, fontStyle:"italic" }}>
+        💡 Tasa de referencia (BCE). Tu banco aplicará una tasa similar +/- 0.5%
+      </div>
+    </div>
+  );
+}
 
 // ═══════════════════════════════════════════
 // 🏠 HOME TAB
@@ -1272,23 +1415,31 @@ const TABS = [
 
 export default function App() {
   const [tab, setTab] = useState("home");
+  const [fxOpen, setFxOpen] = useState(false);
   const gps = useGPS();
+  const fx = useExchangeRate();
 
   return (
     <div style={{ fontFamily:"-apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif", background:C.bg, color:C.text, minHeight:"100vh", maxWidth:500, margin:"0 auto", paddingBottom:72 }}>
-      <div style={{ background:`linear-gradient(145deg, #1a2e44, ${C.bg})`, padding:"14px 16px 10px", borderBottom:`1.5px solid ${C.accent}55`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div>
+      <div style={{ background:`linear-gradient(145deg, #1a2e44, ${C.bg})`, padding:"14px 16px 10px", borderBottom:`1.5px solid ${C.accent}55`, display:"flex", justifyContent:"space-between", alignItems:"center", gap:6 }}>
+        <div style={{ flexShrink:0 }}>
           <h1 style={{ fontSize:18, fontWeight:900, margin:0, background:`linear-gradient(90deg, ${C.accent}, ${C.gold})`, WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>🗽 ❤️</h1>
           <p style={{ fontSize:9, color:C.muted, margin:0, letterSpacing:2 }}>20 JUN — 1 JUL · 5 VIAJEROS</p>
         </div>
-        <button onClick={gps.active ? gps.stop : gps.start} style={{
-          padding:"6px 10px", borderRadius:8, border:`1px solid ${gps.active?C.green:C.border}`,
-          background:gps.active?`${C.green}18`:"transparent", color:gps.active?C.green:C.muted,
-          fontSize:10, fontWeight:700, cursor:"pointer"
-        }}>
-          {gps.active ? "📍 GPS ON" : "📍 GPS"}
-        </button>
+        <div style={{ display:"flex", gap:6, alignItems:"center", flexShrink:0 }}>
+          <CurrencyButton fx={fx} open={fxOpen} onToggle={() => setFxOpen(!fxOpen)} />
+          <button onClick={gps.active ? gps.stop : gps.start} style={{
+            padding:"6px 10px", borderRadius:8, border:`1px solid ${gps.active?C.green:C.border}`,
+            background:gps.active?`${C.green}18`:"transparent", color:gps.active?C.green:C.muted,
+            fontSize:10, fontWeight:700, cursor:"pointer"
+          }}>
+            {gps.active ? "📍 GPS ON" : "📍 GPS"}
+          </button>
+        </div>
       </div>
+
+      {/* Panel desplegable del conversor (abajo del header) */}
+      {fxOpen && <CurrencyPanel fx={fx} />}
 
       {gps.active && gps.pos && (
         <div style={{ padding:"4px 14px", background:`${C.green}08`, fontSize:10, color:C.green, borderBottom:`1px solid ${C.green}20` }}>
