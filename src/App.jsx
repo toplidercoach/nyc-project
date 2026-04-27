@@ -66,31 +66,64 @@ function useGPS() {
   return { pos, active, start, stop };
 }
 
-// Hook para tasa de cambio USD/EUR (API frankfurter.app)
+// Hook para tasa de cambio USD/EUR (con API principal + respaldo)
+// API 1: frankfurter.dev (Banco Central Europeo, sin clave) - PRINCIPAL
+// API 2: exchangerate-api.com (sin clave en endpoint open) - RESPALDO
 function useExchangeRate() {
   const cached = S.get("fx") || null;
-  const [rate, setRate] = useState(cached?.rate || 0.92); // fallback inicial
+  // Fallback inicial: tasa razonable abril 2026 (~0.85)
+  // Solo se usa si jamás hemos podido conectar a internet
+  const [rate, setRate] = useState(cached?.rate || 0.85);
   const [updated, setUpdated] = useState(cached?.updated || null);
+  const [source, setSource] = useState(cached?.source || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
 
   const fetchRate = useCallback(async () => {
     setLoading(true);
     setError(false);
+
+    // Intentar API principal: frankfurter.dev (Banco Central Europeo, datos oficiales)
     try {
-      // frankfurter.app: 1 USD a EUR
-      const res = await fetch("https://api.frankfurter.app/latest?from=USD&to=EUR");
-      if (!res.ok) throw new Error("API error");
-      const data = await res.json();
-      const newRate = data.rates?.EUR;
-      if (typeof newRate !== "number") throw new Error("No rate");
-      const now = Date.now();
-      setRate(newRate);
-      setUpdated(now);
-      S.set("fx", { rate: newRate, updated: now });
+      const res = await fetch("https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR");
+      if (res.ok) {
+        const data = await res.json();
+        const newRate = data?.rates?.EUR;
+        if (typeof newRate === "number" && newRate > 0.5 && newRate < 1.5) {
+          const now = Date.now();
+          setRate(newRate);
+          setUpdated(now);
+          setSource("BCE (Frankfurter)");
+          S.set("fx", { rate: newRate, updated: now, source: "BCE (Frankfurter)" });
+          setLoading(false);
+          return;
+        }
+      }
     } catch (e) {
-      setError(true);
+      // sigue al respaldo
     }
+
+    // API de respaldo: exchangerate-api.com (formato JSON simple, sin clave)
+    try {
+      const res = await fetch("https://open.er-api.com/v6/latest/USD");
+      if (res.ok) {
+        const data = await res.json();
+        const newRate = data?.rates?.EUR;
+        if (typeof newRate === "number" && newRate > 0.5 && newRate < 1.5) {
+          const now = Date.now();
+          setRate(newRate);
+          setUpdated(now);
+          setSource("ExchangeRate-API");
+          S.set("fx", { rate: newRate, updated: now, source: "ExchangeRate-API" });
+          setLoading(false);
+          return;
+        }
+      }
+    } catch (e) {
+      // ambos han fallado
+    }
+
+    setError(true);
     setLoading(false);
   }, []);
 
@@ -100,7 +133,7 @@ function useExchangeRate() {
     if (stale) fetchRate();
   }, [fetchRate, updated]);
 
-  return { rate, updated, loading, error, refresh: fetchRate };
+  return { rate, updated, source, loading, error, refresh: fetchRate };
 }
 
 // Hook para meteorología en Nueva York (API Open-Meteo, gratis sin clave)
@@ -565,8 +598,16 @@ function CurrencyPanel({ fx }) {
         <div>
           <div style={{ fontSize:11, fontWeight:800, color:C.gold }}>💱 Conversor USD ↔ EUR</div>
           <div style={{ fontSize:9, color:C.muted, marginTop:1 }}>
-            {fx.error ? "⚠️ Sin conexión, tasa cacheada" : `1 USD = ${fx.rate.toFixed(4)} EUR · Actualizado ${updatedText}`}
+            {fx.error
+              ? "⚠️ Sin conexión a APIs · usando última tasa conocida"
+              : <>1 USD = <b style={{ color:C.gold }}>{fx.rate.toFixed(4)} EUR</b> · {updatedText}{fx.source && ` · ${fx.source}`}</>
+            }
           </div>
+          {fx.updated && (Date.now() - fx.updated > 24 * 3600 * 1000) && (
+            <div style={{ fontSize:9, color:C.red, marginTop:1 }}>
+              ⚠️ Tasa con más de 24h, pulsa 🔄 para actualizar
+            </div>
+          )}
         </div>
         <button onClick={fx.refresh} disabled={fx.loading} style={{
           padding:"4px 8px", borderRadius:6, border:`1px solid ${C.border}`,
