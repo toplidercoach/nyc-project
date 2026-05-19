@@ -488,23 +488,50 @@ function CalendarTab({ gps }) {
         const isMoving = moving === ev.id;
         const canUp = evIdx > 0 && !ev.f && !dayEvt[evIdx-1].f;
         const canDown = evIdx < dayEvt.length - 1 && !ev.f && !dayEvt[evIdx+1].f;
+        // Distance from previous event (or from Airbnb if first)
+        const prevEv = evIdx > 0 ? dayEvt[evIdx - 1] : null;
+        const fromPt = prevEv && prevEv.lat ? { lat:prevEv.lat, lng:prevEv.lng } : HOME;
+        const fromLabel = prevEv && prevEv.lat ? "↑ anterior" : "🏠 Airbnb";
+        const dist = ev.lat ? distInfo(ev.lat, ev.lng, fromPt) : null;
+        // Google Maps walking directions URL
+        const mapsUrl = ev.lat ? (prevEv && prevEv.lat
+          ? `https://www.google.com/maps/dir/${prevEv.lat},${prevEv.lng}/${ev.lat},${ev.lng}/@${ev.lat},${ev.lng},14z/data=!3m1!4b1!4m2!4m1!3e2`
+          : `https://www.google.com/maps/dir/${HOME.lat},${HOME.lng}/${ev.lat},${ev.lng}/@${ev.lat},${ev.lng},14z/data=!3m1!4b1!4m2!4m1!3e2`
+        ) : null;
         return (
           <div key={ev.id} style={{ marginBottom:6 }}>
+            {/* Distance connector from previous */}
+            {dist && evIdx > 0 && (
+              <div style={{ marginLeft:54, display:"flex", alignItems:"center", gap:6, padding:"3px 8px", marginBottom:2 }}>
+                <div style={{ width:1, height:12, background:`${C.muted}30` }} />
+                <span style={{ fontSize:9, color:C.blue }}>🚶 {dist.km}km · {dist.walkMin}min andando</span>
+                <span style={{ fontSize:9, color:C.muted }}>desde {fromLabel}</span>
+              </div>
+            )}
             <div style={{ display:"flex", gap:8 }}>
               <div style={{ width:46, flexShrink:0, textAlign:"right", paddingTop:4, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:0 }}>
-                {/* Up arrow */}
                 {!ev.f && <button onClick={() => swapOrder(ev.id, -1)} disabled={!canUp} style={{ background:"none", border:"none", fontSize:10, cursor:canUp?"pointer":"default", color:canUp?C.accent:`${C.muted}30`, padding:"0 2px", lineHeight:1 }}>▲</button>}
                 <div style={{ fontSize:12, fontWeight:700, color:ev.c||C.accent }}>{ev.s}</div>
                 <div style={{ fontSize:10, color:C.muted }}>{ev.e}</div>
                 <div style={{ fontSize:8, color:C.muted }}>{dur}min</div>
-                {/* Down arrow */}
                 {!ev.f && <button onClick={() => swapOrder(ev.id, 1)} disabled={!canDown} style={{ background:"none", border:"none", fontSize:10, cursor:canDown?"pointer":"default", color:canDown?C.accent:`${C.muted}30`, padding:"0 2px", lineHeight:1 }}>▼</button>}
               </div>
               <div onClick={() => !isMoving && startEdit(ev)} style={{ flex:1, borderLeft:`3px solid ${ev.c||C.accent}`, borderRadius:"0 8px 8px 0", padding:"8px 10px", background:`${ev.c||C.accent}0a`, border:`1px solid ${ev.c||C.accent}18`, position:"relative", cursor:ev.f?"default":"pointer" }}>
                 <div style={{ fontSize:13, fontWeight:600, paddingRight:ev.f?18:50 }}>{ev.t}</div>
+                {/* Location name */}
+                {ev.loc && <div style={{ fontSize:9, color:C.muted, marginTop:2 }}>{ev.loc}</div>}
                 {hasOverlap && <span style={{ fontSize:9, color:C.red }}>⚠️ Solapamiento</span>}
-                {ev.lat && <DistBadge lat={ev.lat} lng={ev.lng} gps={gps} />}
-                {/* Action buttons for non-fixed events */}
+                {/* Distance + Maps link */}
+                {dist && (
+                  <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginTop:4, alignItems:"center" }}>
+                    <span style={{ fontSize:9, padding:"1px 5px", borderRadius:4, background:`${C.blue}15`, color:C.blue }}>{fromLabel} {dist.km}km</span>
+                    <span style={{ fontSize:9, padding:"1px 5px", borderRadius:4, background:`${C.gold}15`, color:C.gold }}>🚶{dist.walkMin}min</span>
+                    <span style={{ fontSize:9, padding:"1px 5px", borderRadius:4, background:`${C.green}15`, color:C.green }}>🚕~{dist.carMin}min</span>
+                    {mapsUrl && <a href={mapsUrl} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ fontSize:9, padding:"1px 5px", borderRadius:4, background:`${C.purple}15`, color:C.purple, textDecoration:"none" }}>🗺️ Mapa</a>}
+                    {mapsUrl && <a href={mapsUrl.replace("!3e2","!3e3")} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ fontSize:9, padding:"1px 5px", borderRadius:4, background:`${C.accent}15`, color:C.accent, textDecoration:"none" }}>🚇 Transit</a>}
+                  </div>
+                )}
+                {/* Action buttons */}
                 {!ev.f && (
                   <div style={{ position:"absolute", top:5, right:5, display:"flex", gap:2 }}>
                     <button onClick={(e) => { e.stopPropagation(); setMoving(isMoving ? null : ev.id); }} title="Mover día" style={{ background:"none", border:"none", fontSize:11, cursor:"pointer", opacity:0.6, padding:"0 2px" }}>📦</button>
