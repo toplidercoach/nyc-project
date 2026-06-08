@@ -13,14 +13,19 @@ const DB = {
       const r = await fetch(`${SB_URL}/rest/v1/nyc_sync?key=eq.${key}&select=data,updated_at`, { headers: SB_HEADERS });
       if (!r.ok) throw new Error(r.statusText);
       const rows = await r.json();
-      return rows.length > 0 ? { data: rows[0].data, ts: rows[0].updated_at } : null;
+      if (rows.length === 0) return null;
+      // data is JSONB, PostgREST returns it already parsed
+      let d = rows[0].data;
+      // Safety: if it's a string (double-encoded), parse it
+      if (typeof d === "string") try { d = JSON.parse(d); } catch {}
+      return { data: Array.isArray(d) ? d : [], ts: rows[0].updated_at };
     } catch (e) { console.error("DB.get:", e); return null; }
   },
   async set(key, data) {
     try {
       const r = await fetch(`${SB_URL}/rest/v1/nyc_sync?key=eq.${key}`, {
         method: "PATCH", headers: { ...SB_HEADERS, Prefer: "return=minimal" },
-        body: JSON.stringify({ data: JSON.stringify(data), updated_at: new Date().toISOString() })
+        body: JSON.stringify({ data: data, updated_at: new Date().toISOString() })
       });
       return r.ok;
     } catch (e) { console.error("DB.set:", e); return false; }
