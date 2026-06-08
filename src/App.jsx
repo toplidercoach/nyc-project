@@ -415,13 +415,34 @@ function CalendarTab({ gps }) {
   const saveTimer = useRef(null);
   const pollTimer = useRef(null);
 
-  // Load from Supabase on mount
+  // Load from Supabase on mount — smart merge: never overwrite with empty
   useEffect(() => {
     (async () => {
       const [dbEvents, dbIdeas] = await Promise.all([DB.getAll("nyc_events"), DB.getAll("nyc_ideas")]);
-      if (dbEvents) { setEvents(dbEvents); S.set("cal2", dbEvents); }
-      if (dbIdeas) { setIdeas(dbIdeas); S.set("ideas", dbIdeas); }
-      setSyncStatus(dbEvents ? "synced" : "offline");
+      const localEvents = S.get("cal2");
+      const localIdeas = S.get("ideas");
+
+      if (dbEvents && dbEvents.length > 0) {
+        // Supabase has data → use it
+        setEvents(dbEvents); S.set("cal2", dbEvents);
+      } else if (localEvents && localEvents.length > 0) {
+        // Supabase empty but localStorage has data → migrate to Supabase
+        setEvents(localEvents);
+        await DB.upsertAll("nyc_events", localEvents);
+      } else {
+        // Both empty → seed with DEFAULT_CAL
+        setEvents(DEFAULT_CAL);
+        await DB.upsertAll("nyc_events", DEFAULT_CAL);
+      }
+
+      if (dbIdeas && dbIdeas.length > 0) {
+        setIdeas(dbIdeas); S.set("ideas", dbIdeas);
+      } else if (localIdeas && localIdeas.length > 0) {
+        setIdeas(localIdeas);
+        await DB.upsertAll("nyc_ideas", localIdeas);
+      }
+
+      setSyncStatus(dbEvents !== null ? "synced" : "offline");
     })();
   }, []);
 
@@ -430,12 +451,13 @@ function CalendarTab({ gps }) {
     pollTimer.current = setInterval(async () => {
       if (syncStatus === "saving") return;
       const [dbEvents, dbIdeas] = await Promise.all([DB.getAll("nyc_events"), DB.getAll("nyc_ideas")]);
-      if (dbEvents) {
+      // Only update if Supabase has data (never overwrite with empty)
+      if (dbEvents && dbEvents.length > 0) {
         const localHash = JSON.stringify(events.map(e => e.t + e.s + e.day).sort());
         const remoteHash = JSON.stringify(dbEvents.map(e => e.t + e.s + e.day).sort());
         if (localHash !== remoteHash) { setEvents(dbEvents); S.set("cal2", dbEvents); }
       }
-      if (dbIdeas) {
+      if (dbIdeas && dbIdeas.length > 0) {
         const localHash = JSON.stringify(ideas.map(e => e.t).sort());
         const remoteHash = JSON.stringify(dbIdeas.map(e => e.t).sort());
         if (localHash !== remoteHash) { setIdeas(dbIdeas); S.set("ideas", dbIdeas); }
