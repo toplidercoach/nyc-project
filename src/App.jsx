@@ -8,24 +8,22 @@ const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const SB_HEADERS = { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": "application/json" };
 
 const DB = {
-  async getAll(table) {
+  async get(key) {
     try {
-      const r = await fetch(`${SB_URL}/rest/v1/${table}?select=*&order=id`, { headers: SB_HEADERS });
+      const r = await fetch(`${SB_URL}/rest/v1/nyc_sync?key=eq.${key}&select=data,updated_at`, { headers: SB_HEADERS });
       if (!r.ok) throw new Error(r.statusText);
-      return await r.json();
-    } catch (e) { console.error("DB.getAll:", e); return null; }
+      const rows = await r.json();
+      return rows.length > 0 ? { data: rows[0].data, ts: rows[0].updated_at } : null;
+    } catch (e) { console.error("DB.get:", e); return null; }
   },
-  async upsertAll(table, rows) {
+  async set(key, data) {
     try {
-      // Delete all then insert (simple sync for small dataset)
-      await fetch(`${SB_URL}/rest/v1/${table}?id=gt.0`, { method: "DELETE", headers: SB_HEADERS });
-      if (rows.length === 0) return true;
-      const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
-        method: "POST", headers: { ...SB_HEADERS, Prefer: "return=minimal" },
-        body: JSON.stringify(rows.map(({ addr, searching, geoResult, geoError, ...rest }) => rest))
+      const r = await fetch(`${SB_URL}/rest/v1/nyc_sync?key=eq.${key}`, {
+        method: "PATCH", headers: { ...SB_HEADERS, Prefer: "return=minimal" },
+        body: JSON.stringify({ data: JSON.stringify(data), updated_at: new Date().toISOString() })
       });
       return r.ok;
-    } catch (e) { console.error("DB.upsertAll:", e); return false; }
+    } catch (e) { console.error("DB.set:", e); return false; }
   }
 };
 
@@ -411,62 +409,56 @@ function CalendarTab({ gps }) {
   const [ideaText, setIdeaText] = useState("");
   const [scheduleIdea, setScheduleIdea] = useState(null);
   const [showPlaces, setShowPlaces] = useState(false);
-  const [syncStatus, setSyncStatus] = useState("loading"); // loading, synced, offline, saving
+  const [syncStatus, setSyncStatus] = useState("loading");
   const saveTimer = useRef(null);
   const pollTimer = useRef(null);
+  const lastRemoteTs = useRef(null);
 
-  // Load from Supabase on mount — smart merge: never overwrite with empty
+  // Load from Supabase on mount
   useEffect(() => {
     (async () => {
-      const [dbEvents, dbIdeas] = await Promise.all([DB.getAll("nyc_events"), DB.getAll("nyc_ideas")]);
-      const localEvents = S.get("cal2");
-      const localIdeas = S.get("ideas");
+      const [remoteEv, remoteId] = await Promise.all([DB.get("events"), DB.get("ideas")]);
 
-      if (dbEvents && dbEvents.length > 0) {
-        // Supabase has data → use it
-        setEvents(dbEvents); S.set("cal2", dbEvents);
-      } else if (localEvents && localEvents.length > 0) {
-        // Supabase empty but localStorage has data → migrate to Supabase
-        setEvents(localEvents);
-        await DB.upsertAll("nyc_events", localEvents);
+      if (remoteEv && remoteEv.data && remoteEv.data.length > 0) {
+        setEvents(remoteEv.data); S.set("cal2", remoteEv.data);
+        lastRemoteTs.current = remoteEv.ts;
       } else {
-        // Both empty → seed with DEFAULT_CAL
-        setEvents(DEFAULT_CAL);
-        await DB.upsertAll("nyc_events", DEFAULT_CAL);
+        const local = S.get("cal2") || DEFAULT_CAL;
+        setEvents(local);
+        await DB.set("events", local);
+        lastRemoteTs.current = new Date().toISOString();
       }
 
-      if (dbIdeas && dbIdeas.length > 0) {
-        setIdeas(dbIdeas); S.set("ideas", dbIdeas);
-      } else if (localIdeas && localIdeas.length > 0) {
-        setIdeas(localIdeas);
-        await DB.upsertAll("nyc_ideas", localIdeas);
+      if (remoteId && remoteId.data && remoteId.data.length > 0) {
+        setIdeas(remoteId.data); S.set("ideas", remoteId.data);
+      } else {
+        const local = S.get("ideas") || [];
+        setIdeas(local);
+        if (local.length > 0) await DB.set("ideas", local);
       }
 
-      setSyncStatus(dbEvents !== null ? "synced" : "offline");
+      setSyncStatus(remoteEv !== null ? "synced" : "offline");
     })();
   }, []);
 
-  // Poll Supabase every 8s for changes from other travelers
+  // Poll Supabase every 6s for changes from other travelers
   useEffect(() => {
     pollTimer.current = setInterval(async () => {
       if (syncStatus === "saving") return;
-      const [dbEvents, dbIdeas] = await Promise.all([DB.getAll("nyc_events"), DB.getAll("nyc_ideas")]);
-      // Only update if Supabase has data (never overwrite with empty)
-      if (dbEvents && dbEvents.length > 0) {
-        const localHash = JSON.stringify(events.map(e => e.t + e.s + e.day).sort());
-        const remoteHash = JSON.stringify(dbEvents.map(e => e.t + e.s + e.day).sort());
-        if (localHash !== remoteHash) { setEvents(dbEvents); S.set("cal2", dbEvents); }
+      const [remoteEv, remoteId] = await Promise.all([DB.get("events"), DB.get("ideas")]);
+      if (remoteEv && remoteEv.ts !== lastRemoteTs.current && remoteEv.data && remoteEv.data.length > 0) {
+        lastRemoteTs.current = remoteEv.ts;
+        setEvents(remoteEv.data); S.set("cal2", remoteEv.data);
       }
-      if (dbIdeas && dbIdeas.length > 0) {
-        const localHash = JSON.stringify(ideas.map(e => e.t).sort());
-        const remoteHash = JSON.stringify(dbIdeas.map(e => e.t).sort());
-        if (localHash !== remoteHash) { setIdeas(dbIdeas); S.set("ideas", dbIdeas); }
+      if (remoteId && remoteId.data && remoteId.data.length > 0) {
+        setIdeas(remoteId.data); S.set("ideas", remoteId.data);
       }
-    }, 8000);
+      if (remoteEv !== null) setSyncStatus("synced");
+    }, 6000);
     return () => clearInterval(pollTimer.current);
-  }, [events, ideas, syncStatus]);
+  }, [syncStatus]);
 
-  // Debounced save to Supabase when state changes (skip initial load)
+  // Debounced save to Supabase when state changes
   const mounted = useRef(false);
   useEffect(() => {
     if (!mounted.current) { mounted.current = true; return; }
@@ -474,9 +466,11 @@ function CalendarTab({ gps }) {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSyncStatus("saving");
     saveTimer.current = setTimeout(async () => {
-      const [okE, okI] = await Promise.all([DB.upsertAll("nyc_events", events), DB.upsertAll("nyc_ideas", ideas)]);
+      const clean = events.map(({ addr, searching, geoResult, geoError, ...rest }) => rest);
+      const [okE, okI] = await Promise.all([DB.set("events", clean), DB.set("ideas", ideas)]);
+      if (okE) lastRemoteTs.current = new Date().toISOString();
       setSyncStatus(okE && okI ? "synced" : "offline");
-    }, 1200);
+    }, 1000);
   }, [events, ideas]);
 
   const dayEvt = events.filter(ev => ev.day === day).sort((a,b) => a.s.localeCompare(b.s));
