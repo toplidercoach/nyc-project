@@ -1,7 +1,36 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // ═══════════════════════════════════════════
-// STORAGE & UTILS
+// SUPABASE CONFIG
+// ═══════════════════════════════════════════
+const SB_URL = "https://txowjhiaftcqmdewwqpv.supabase.co";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4b3dqaGlhZnRjcW1kZXd3cXB2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MjE5MjgsImV4cCI6MjA5NjQ5NzkyOH0.9uOPxBFhIPqZb1aQ1kz4hOtwjLzVqbHT-ghrw3wk1Gc";
+const SB_HEADERS = { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": "application/json" };
+
+const DB = {
+  async getAll(table) {
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/${table}?select=*&order=id`, { headers: SB_HEADERS });
+      if (!r.ok) throw new Error(r.statusText);
+      return await r.json();
+    } catch (e) { console.error("DB.getAll:", e); return null; }
+  },
+  async upsertAll(table, rows) {
+    try {
+      // Delete all then insert (simple sync for small dataset)
+      await fetch(`${SB_URL}/rest/v1/${table}?id=gt.0`, { method: "DELETE", headers: SB_HEADERS });
+      if (rows.length === 0) return true;
+      const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+        method: "POST", headers: { ...SB_HEADERS, Prefer: "return=minimal" },
+        body: JSON.stringify(rows.map(({ addr, searching, geoResult, geoError, ...rest }) => rest))
+      });
+      return r.ok;
+    } catch (e) { console.error("DB.upsertAll:", e); return false; }
+  }
+};
+
+// ═══════════════════════════════════════════
+// LOCAL STORAGE (cache/fallback)
 // ═══════════════════════════════════════════
 const S = {
   get(k) { try { return JSON.parse(localStorage.getItem(`nyc_${k}`)); } catch { return null; } },
@@ -27,9 +56,9 @@ function DistBadge({ lat, lng, gps }) {
   const label = gps ? "📍" : "🏠";
   return (
     <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>
-      <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, background: `${C.blue}15`, color: C.blue }}>{label} {d.km}km</span>
-      <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, background: `${C.gold}15`, color: C.gold }}>🚶{d.walkMin}min</span>
-      <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, background: `${C.green}15`, color: C.green }}>🚕~{d.carMin}min</span>
+      <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: `${C.blue}15`, color: C.blue }}>{label} {d.km}km</span>
+      <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: `${C.gold}15`, color: C.gold }}>🚶{d.walkMin}min</span>
+      <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: `${C.green}15`, color: C.green }}>🚕~{d.carMin}min</span>
     </div>
   );
 }
@@ -55,14 +84,14 @@ const C = {
   accent: "#f97316", gold: "#fbbf24", red: "#ef4444", green: "#22c55e", blue: "#3b82f6", purple: "#a78bfa", pink: "#ec4899",
   text: "#e8edf3", muted: "#7e8fa3", border: "#243040",
 };
-const inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontSize: 14, outline: "none", boxSizing: "border-box" };
+const inputStyle = { width: "100%", padding: "12px 14px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontSize: 16, outline: "none", boxSizing: "border-box" };
 
 // ═══════════════════════════════════════════
 // COMMON COMPONENTS
 // ═══════════════════════════════════════════
-const Card = ({ children, style, onClick }) => <div onClick={onClick} style={{ background: C.card, borderRadius: 12, padding: 14, marginBottom: 10, border: `1px solid ${C.border}`, ...(onClick ? { cursor: "pointer" } : {}), ...style }}>{children}</div>;
-const Badge = ({ c, children }) => <span style={{ display: "inline-block", padding: "2px 7px", borderRadius: 16, fontSize: 10, fontWeight: 700, background: `${c}18`, color: c, border: `1px solid ${c}35` }}>{children}</span>;
-const Title = ({ children, sub }) => <div style={{ marginBottom: 14 }}><div style={{ fontSize: 17, fontWeight: 800 }}>{children}</div>{sub && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{sub}</div>}</div>;
+const Card = ({ children, style, onClick }) => <div onClick={onClick} style={{ background: C.card, borderRadius: 12, padding: 16, marginBottom: 10, border: `1px solid ${C.border}`, ...(onClick ? { cursor: "pointer" } : {}), ...style }}>{children}</div>;
+const Badge = ({ c, children }) => <span style={{ display: "inline-block", padding: "3px 8px", borderRadius: 16, fontSize: 12, fontWeight: 700, background: `${c}18`, color: c, border: `1px solid ${c}35` }}>{children}</span>;
+const Title = ({ children, sub }) => <div style={{ marginBottom: 14 }}><div style={{ fontSize: 20, fontWeight: 800 }}>{children}</div>{sub && <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>{sub}</div>}</div>;
 
 // ═══════════════════════════════════════════
 // DATA
@@ -292,9 +321,51 @@ function CalendarTab({ gps }) {
   const [ideaText, setIdeaText] = useState("");
   const [scheduleIdea, setScheduleIdea] = useState(null);
   const [showPlaces, setShowPlaces] = useState(false);
+  const [syncStatus, setSyncStatus] = useState("loading"); // loading, synced, offline, saving
+  const saveTimer = useRef(null);
+  const pollTimer = useRef(null);
 
-  useEffect(() => { S.set("cal2", events); }, [events]);
-  useEffect(() => { S.set("ideas", ideas); }, [ideas]);
+  // Load from Supabase on mount
+  useEffect(() => {
+    (async () => {
+      const [dbEvents, dbIdeas] = await Promise.all([DB.getAll("nyc_events"), DB.getAll("nyc_ideas")]);
+      if (dbEvents) { setEvents(dbEvents); S.set("cal2", dbEvents); }
+      if (dbIdeas) { setIdeas(dbIdeas); S.set("ideas", dbIdeas); }
+      setSyncStatus(dbEvents ? "synced" : "offline");
+    })();
+  }, []);
+
+  // Poll Supabase every 8s for changes from other travelers
+  useEffect(() => {
+    pollTimer.current = setInterval(async () => {
+      if (syncStatus === "saving") return;
+      const [dbEvents, dbIdeas] = await Promise.all([DB.getAll("nyc_events"), DB.getAll("nyc_ideas")]);
+      if (dbEvents) {
+        const localHash = JSON.stringify(events.map(e => e.t + e.s + e.day).sort());
+        const remoteHash = JSON.stringify(dbEvents.map(e => e.t + e.s + e.day).sort());
+        if (localHash !== remoteHash) { setEvents(dbEvents); S.set("cal2", dbEvents); }
+      }
+      if (dbIdeas) {
+        const localHash = JSON.stringify(ideas.map(e => e.t).sort());
+        const remoteHash = JSON.stringify(dbIdeas.map(e => e.t).sort());
+        if (localHash !== remoteHash) { setIdeas(dbIdeas); S.set("ideas", dbIdeas); }
+      }
+    }, 8000);
+    return () => clearInterval(pollTimer.current);
+  }, [events, ideas, syncStatus]);
+
+  // Debounced save to Supabase when state changes (skip initial load)
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (!mounted.current) { mounted.current = true; return; }
+    S.set("cal2", events); S.set("ideas", ideas);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    setSyncStatus("saving");
+    saveTimer.current = setTimeout(async () => {
+      const [okE, okI] = await Promise.all([DB.upsertAll("nyc_events", events), DB.upsertAll("nyc_ideas", ideas)]);
+      setSyncStatus(okE && okI ? "synced" : "offline");
+    }, 1200);
+  }, [events, ideas]);
 
   const dayEvt = events.filter(ev => ev.day === day).sort((a,b) => a.s.localeCompare(b.s));
   const nextId = Math.max(0, ...events.map(ev => ev.id), ...ideas.map(x => x.id || 0)) + 1;
@@ -420,7 +491,7 @@ function CalendarTab({ gps }) {
         {DAY_LABELS.map((d,i) => {
           const hasEvts = events.some(ev => ev.day === i);
           return (
-            <button key={i} onClick={() => { setDay(i); setMoving(null); }} style={{ padding:"5px 8px", borderRadius:7, border:`1px solid ${day===i?C.accent:C.border}`, background:day===i?`${C.accent}18`:"transparent", color:day===i?C.accent:C.muted, fontSize:10, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap", flexShrink:0, position:"relative" }}>
+            <button key={i} onClick={() => { setDay(i); setMoving(null); }} style={{ padding:"5px 8px", borderRadius:7, border:`1px solid ${day===i?C.accent:C.border}`, background:day===i?`${C.accent}18`:"transparent", color:day===i?C.accent:C.muted, fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap", flexShrink:0, position:"relative" }}>
               {d}
               {hasEvts && <span style={{ position:"absolute", top:-2, right:-2, width:5, height:5, borderRadius:"50%", background:C.accent }} />}
             </button>
@@ -428,11 +499,17 @@ function CalendarTab({ gps }) {
         })}
       </div>
 
-      {/* Day title + ideas toggle */}
+      {/* Day title + sync status + ideas toggle */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-        <div style={{ fontSize:15, fontWeight:800 }}>{DAY_TITLES[day]} · {DAY_LABELS[day]}</div>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <div style={{ fontSize:17, fontWeight:800 }}>{DAY_TITLES[day]} · {DAY_LABELS[day]}</div>
+          <span style={{ fontSize:10, padding:"2px 6px", borderRadius:4,
+            background: syncStatus==="synced"?`${C.green}15`:syncStatus==="saving"?`${C.gold}15`:syncStatus==="loading"?`${C.blue}15`:`${C.red}15`,
+            color: syncStatus==="synced"?C.green:syncStatus==="saving"?C.gold:syncStatus==="loading"?C.blue:C.red
+          }}>{syncStatus==="synced"?"☁️ Sync":syncStatus==="saving"?"💾...":syncStatus==="loading"?"⏳":"📴 Local"}</span>
+        </div>
         <button onClick={() => setShowIdeas(!showIdeas)} style={{
-          padding:"4px 10px", borderRadius:14, fontSize:10, fontWeight:700, cursor:"pointer",
+          padding:"4px 10px", borderRadius:14, fontSize:12, fontWeight:700, cursor:"pointer",
           border:`1px solid ${C.gold}50`, background:showIdeas?`${C.gold}20`:`${C.gold}08`,
           color:C.gold, position:"relative"
         }}>
@@ -511,13 +588,13 @@ function CalendarTab({ gps }) {
             <div style={{ display:"flex", gap:8 }}>
               <div style={{ width:46, flexShrink:0, textAlign:"right", paddingTop:4, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:0 }}>
                 {!ev.f && <button onClick={() => swapOrder(ev.id, -1)} disabled={!canUp} style={{ background:"none", border:"none", fontSize:10, cursor:canUp?"pointer":"default", color:canUp?C.accent:`${C.muted}30`, padding:"0 2px", lineHeight:1 }}>▲</button>}
-                <div style={{ fontSize:12, fontWeight:700, color:ev.c||C.accent }}>{ev.s}</div>
-                <div style={{ fontSize:10, color:C.muted }}>{ev.e}</div>
-                <div style={{ fontSize:8, color:C.muted }}>{dur}min</div>
+                <div style={{ fontSize:14, fontWeight:700, color:ev.c||C.accent }}>{ev.s}</div>
+                <div style={{ fontSize:12, color:C.muted }}>{ev.e}</div>
+                <div style={{ fontSize:10, color:C.muted }}>{dur}min</div>
                 {!ev.f && <button onClick={() => swapOrder(ev.id, 1)} disabled={!canDown} style={{ background:"none", border:"none", fontSize:10, cursor:canDown?"pointer":"default", color:canDown?C.accent:`${C.muted}30`, padding:"0 2px", lineHeight:1 }}>▼</button>}
               </div>
               <div onClick={() => !isMoving && startEdit(ev)} style={{ flex:1, borderLeft:`3px solid ${ev.c||C.accent}`, borderRadius:"0 8px 8px 0", padding:"8px 10px", background:`${ev.c||C.accent}0a`, border:`1px solid ${ev.c||C.accent}18`, position:"relative", cursor:ev.f?"default":"pointer" }}>
-                <div style={{ fontSize:13, fontWeight:600, paddingRight:ev.f?18:50 }}>{ev.t}</div>
+                <div style={{ fontSize:15, fontWeight:600, paddingRight:ev.f?18:50 }}>{ev.t}</div>
                 {/* Location name */}
                 {ev.loc && <div style={{ fontSize:9, color:C.muted, marginTop:2 }}>{ev.loc}</div>}
                 {hasOverlap && <span style={{ fontSize:9, color:C.red }}>⚠️ Solapamiento</span>}
@@ -647,6 +724,9 @@ function CalendarTab({ gps }) {
 
       <div style={{ fontSize:10, color:C.muted, marginTop:10, padding:"6px 8px", background:`${C.blue}08`, borderRadius:6, textAlign:"center" }}>
         📦 = mover a otro día · 💡 = guardar en Ideas · ▲▼ = reordenar · ✕ = borrar
+      </div>
+      <div style={{ display:"flex", justifyContent:"center", gap:8, marginTop:6 }}>
+        <button onClick={() => { if (window.confirm("¿Resetear calendario a los valores originales? Se perderán todos los cambios.")) { setEvents(DEFAULT_CAL); setIdeas([]); }}} style={{ fontSize:9, color:C.red, background:"none", border:`1px solid ${C.red}30`, borderRadius:6, padding:"4px 10px", cursor:"pointer", opacity:0.5 }}>🔄 Resetear calendario</button>
       </div>
     </div>
   );
@@ -1277,7 +1357,7 @@ export default function App() {
         <button onClick={gps.active ? gps.stop : gps.start} style={{
           padding:"6px 10px", borderRadius:8, border:`1px solid ${gps.active?C.green:C.border}`,
           background:gps.active?`${C.green}18`:"transparent", color:gps.active?C.green:C.muted,
-          fontSize:10, fontWeight:700, cursor:"pointer"
+          fontSize:12, fontWeight:700, cursor:"pointer"
         }}>
           {gps.active ? "📍 GPS ON" : "📍 GPS"}
         </button>
