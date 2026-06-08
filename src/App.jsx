@@ -221,42 +221,132 @@ const EVENTS = [
 // 🏠 HOME TAB
 // ═══════════════════════════════════════════
 function HomeTab() {
-  const days = Math.max(0, Math.floor((new Date("2026-06-20T12:25:00+02:00") - new Date()) / 864e5));
+  const [weather, setWeather] = useState(null);
+  const [now, setNow] = useState(new Date());
+
+  // Update clock every 30s
+  useEffect(() => { const t = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(t); }, []);
+
+  // Fetch NYC weather + air quality (free API, no key)
+  useEffect(() => {
+    (async () => {
+      try {
+        const [wRes, aqRes] = await Promise.all([
+          fetch("https://api.open-meteo.com/v1/forecast?latitude=40.71&longitude=-74.01&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=America%2FNew_York&forecast_days=3"),
+          fetch("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=40.71&longitude=-74.01&current=us_aqi,pm2_5")
+        ]);
+        const [wData, aqData] = await Promise.all([wRes.json(), aqRes.json()]);
+        setWeather({ ...wData, aqi: aqData?.current });
+      } catch(e) { console.error("Weather:", e); }
+    })();
+  }, []);
+
+  const departure = new Date("2026-06-20T12:25:00+02:00");
+  const diff = departure - now;
+  const days = Math.max(0, Math.floor(diff / 864e5));
+  const hours = Math.max(0, Math.floor((diff % 864e5) / 36e5));
+  const mins = Math.max(0, Math.floor((diff % 36e5) / 6e4));
+
+  const nyTime = now.toLocaleTimeString("es-ES", { timeZone:"America/New_York", hour:"2-digit", minute:"2-digit" });
+  const esTime = now.toLocaleTimeString("es-ES", { timeZone:"Europe/Madrid", hour:"2-digit", minute:"2-digit" });
+
+  const wCodes = {0:"☀️ Despejado",1:"🌤️ Poco nuboso",2:"⛅ Nuboso",3:"☁️ Cubierto",45:"🌫️ Niebla",51:"🌧️ Llovizna",61:"🌧️ Lluvia",63:"🌧️ Lluvia mod.",65:"🌧️ Lluvia fuerte",80:"🌦️ Chubascos",95:"⛈️ Tormenta"};
+  const aqiLabel = (v) => v <= 50 ? ["🟢 Buena", C.green] : v <= 100 ? ["🟡 Moderada", C.gold] : ["🔴 Mala", C.red];
+
   return (
     <div style={{ padding: "12px 14px" }}>
-      <div style={{ display: "flex", gap: 8, margin: "8px 0 14px" }}>
-        {[{v:days,l:"DÍAS",c:C.accent},{v:11,l:"NOCHES",c:C.gold},{v:5,l:"VIAJEROS",c:C.green}].map((x,i)=>(
-          <div key={i} style={{ textAlign:"center", background:`${x.c}12`, borderRadius:12, padding:"10px 14px", border:`1px solid ${x.c}25`, flex:1 }}>
-            <div style={{ fontSize:26, fontWeight:900, color:x.c }}>{x.v}</div>
-            <div style={{ fontSize:9, color:C.muted, textTransform:"uppercase", letterSpacing:1 }}>{x.l}</div>
+      {/* Countdown */}
+      <Card style={{ background:`linear-gradient(135deg, ${C.bg2}, ${C.card})`, textAlign:"center", padding:20 }}>
+        <div style={{ fontSize:14, color:C.muted, marginBottom:6 }}>✈️ DESPEGUE DESDE MADRID</div>
+        {days > 0 ? (
+          <div style={{ display:"flex", justifyContent:"center", gap:10 }}>
+            {[{v:days,l:"DÍAS",c:C.accent},{v:hours,l:"HORAS",c:C.gold},{v:mins,l:"MIN",c:C.blue}].map((x,i)=>(
+              <div key={i} style={{ textAlign:"center", background:`${x.c}12`, borderRadius:12, padding:"10px 16px", border:`1px solid ${x.c}25`, minWidth:65 }}>
+                <div style={{ fontSize:30, fontWeight:900, color:x.c }}>{x.v}</div>
+                <div style={{ fontSize:10, color:C.muted, letterSpacing:1 }}>{x.l}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize:24, fontWeight:900, color:C.green }}>🗽 ¡ESTÁIS EN NUEVA YORK!</div>
+        )}
+        <div style={{ display:"flex", justifyContent:"center", gap:16, marginTop:10 }}>
+          <div><span style={{ fontSize:11, color:C.muted }}>🇪🇸 España</span><div style={{ fontSize:18, fontWeight:700 }}>{esTime}</div></div>
+          <div style={{ color:C.muted, alignSelf:"center" }}>→</div>
+          <div><span style={{ fontSize:11, color:C.muted }}>🗽 Nueva York</span><div style={{ fontSize:18, fontWeight:700, color:C.accent }}>{nyTime}</div></div>
+        </div>
+        <div style={{ fontSize:11, color:C.muted, marginTop:4 }}>6 horas de diferencia</div>
+      </Card>
+
+      {/* Weather + Air Quality */}
+      {weather?.current && (
+        <Card>
+          <div style={{ fontSize:15, fontWeight:700, marginBottom:8 }}>🌡️ Tiempo en Nueva York ahora</div>
+          <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:8 }}>
+            <div style={{ fontSize:36, fontWeight:900, color:C.accent }}>{Math.round(weather.current.temperature_2m)}°C</div>
+            <div>
+              <div style={{ fontSize:14, fontWeight:600 }}>{wCodes[weather.current.weather_code] || "🌤️"}</div>
+              <div style={{ fontSize:12, color:C.muted }}>Sensación: {Math.round(weather.current.apparent_temperature)}°C</div>
+              <div style={{ fontSize:12, color:C.muted }}>Humedad: {weather.current.relative_humidity_2m}% · Viento: {Math.round(weather.current.wind_speed_10m)}km/h</div>
+            </div>
+          </div>
+          {/* 3-day forecast */}
+          {weather.daily && (
+            <div style={{ display:"flex", gap:6 }}>
+              {weather.daily.time.map((d,i) => (
+                <div key={i} style={{ flex:1, textAlign:"center", padding:"6px 4px", background:`${C.blue}08`, borderRadius:8, border:`1px solid ${C.border}` }}>
+                  <div style={{ fontSize:10, color:C.muted }}>{new Date(d).toLocaleDateString("es-ES",{weekday:"short"})}</div>
+                  <div style={{ fontSize:14, fontWeight:700 }}>{Math.round(weather.daily.temperature_2m_max[i])}°</div>
+                  <div style={{ fontSize:10, color:C.blue }}>{Math.round(weather.daily.temperature_2m_min[i])}°</div>
+                  <div style={{ fontSize:9, color:C.muted }}>💧{weather.daily.precipitation_probability_max[i]}%</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {/* Air quality */}
+          {weather.aqi && (
+            <div style={{ marginTop:8, padding:"6px 10px", background:`${aqiLabel(weather.aqi.us_aqi)[1]}10`, borderRadius:8, border:`1px solid ${aqiLabel(weather.aqi.us_aqi)[1]}25`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <span style={{ fontSize:12, fontWeight:600 }}>🌬️ Calidad del aire</span>
+              <span style={{ fontSize:13, fontWeight:700, color:aqiLabel(weather.aqi.us_aqi)[1] }}>{aqiLabel(weather.aqi.us_aqi)[0]} (AQI: {weather.aqi.us_aqi})</span>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Key stats */}
+      <div style={{ display:"flex", gap:6, marginBottom:10 }}>
+        {[{v:"11",l:"NOCHES",c:C.gold},{v:"5",l:"VIAJEROS",c:C.green},{v:"1$≈0.86€",l:"CAMBIO",c:C.blue}].map((x,i)=>(
+          <div key={i} style={{ textAlign:"center", background:`${x.c}10`, borderRadius:10, padding:"8px 6px", border:`1px solid ${x.c}20`, flex:1 }}>
+            <div style={{ fontSize:18, fontWeight:800, color:x.c }}>{x.v}</div>
+            <div style={{ fontSize:9, color:C.muted, letterSpacing:0.5 }}>{x.l}</div>
           </div>
         ))}
       </div>
 
       <Card>
-        <div style={{ fontSize:14, fontWeight:700, marginBottom:6 }}>✈️ Vuelos · <span style={{ color:C.accent }}>KRLGF</span></div>
+        <div style={{ fontSize:15, fontWeight:700, marginBottom:6 }}>✈️ Vuelos · <span style={{ color:C.accent }}>KRLGF</span></div>
         {[["IDA — 20 JUN","IB0211: MAD → JFK","Sale 12:25 · Llega 14:45 T8",C.blue],["VUELTA — 01 JUL","IB0212: JFK → MAD","Sale 16:45 T8 · Llega 02 JUL 06:00",C.accent]].map(([t,r,d,c],i)=>(
           <div key={i} style={{ background:`${c}08`, borderRadius:8, padding:10, marginBottom:i===0?6:0, border:`1px solid ${c}18` }}>
-            <div style={{ fontSize:10, fontWeight:700, color:c }}>{t}</div>
-            <div style={{ fontSize:13, fontWeight:600, marginTop:1 }}>{r}</div>
-            <div style={{ fontSize:11, color:C.muted }}>{d}</div>
+            <div style={{ fontSize:11, fontWeight:700, color:c }}>{t}</div>
+            <div style={{ fontSize:14, fontWeight:600, marginTop:1 }}>{r}</div>
+            <div style={{ fontSize:12, color:C.muted }}>{d}</div>
           </div>
         ))}
       </Card>
       <Card>
-        <div style={{ fontSize:14, fontWeight:700, marginBottom:4 }}>🏠 Airbnb · Jersey City</div>
-        <div style={{ fontSize:13 }}>65 Corbin Ave, NJ 07306</div>
-        <div style={{ fontSize:11, color:C.muted }}>Anfitrión: Faria · Check-out: 1 jul 10:00</div>
-        <div style={{ fontSize:11, padding:"3px 7px", background:`${C.gold}12`, borderRadius:6, color:C.gold, marginTop:4, display:"inline-block" }}>🚇 PATH: Journal Sq → Manhattan ~20 min</div>
+        <div style={{ fontSize:15, fontWeight:700, marginBottom:4 }}>🏠 Airbnb · Jersey City</div>
+        <div style={{ fontSize:14 }}>65 Corbin Ave, NJ 07306</div>
+        <div style={{ fontSize:12, color:C.muted }}>Anfitrión: Faria · Check-out: 1 jul 10:00</div>
+        <div style={{ fontSize:12, padding:"4px 8px", background:`${C.gold}12`, borderRadius:6, color:C.gold, marginTop:4, display:"inline-block" }}>🚇 PATH: Journal Sq → Manhattan ~20 min</div>
       </Card>
       <Card>
-        <div style={{ fontSize:14, fontWeight:700, marginBottom:4 }}>🛡️ Seguro IMAWAY · 250002H5</div>
-        <div style={{ fontSize:12, color:C.muted }}>Médico: <b style={{color:C.green}}>6M €</b> · Anulación: <b>5.000 €</b> · Total: <b>392,87 €</b></div>
-        <div style={{ fontSize:11, color:C.muted, marginTop:3 }}>📞 +34 913907318 · 💬 WA: 913907390</div>
+        <div style={{ fontSize:15, fontWeight:700, marginBottom:4 }}>🛡️ Seguro IMAWAY · 250002H5</div>
+        <div style={{ fontSize:13, color:C.muted }}>Médico: <b style={{color:C.green}}>6M €</b> · Anulación: <b>5.000 €</b> · Total: <b>392,87 €</b></div>
+        <div style={{ fontSize:12, color:C.muted, marginTop:3 }}>📞 +34 913907318 · 💬 WA: 913907390</div>
       </Card>
       <Card>
-        <div style={{ fontSize:14, fontWeight:700, marginBottom:4 }}>💡 Imprescindible</div>
-        <div style={{ fontSize:12, color:C.muted, lineHeight:1.7 }}>
+        <div style={{ fontSize:15, fontWeight:700, marginBottom:4 }}>💡 Imprescindible</div>
+        <div style={{ fontSize:13, color:C.muted, lineHeight:1.8 }}>
           🛂 <b style={{color:C.text}}>ESTA:</b> 14$/persona · 🔌 <b style={{color:C.text}}>Enchufe:</b> Tipo A/B<br/>
           💳 <b style={{color:C.text}}>Revolut/N26</b> sin comisiones · Propina 15-20%<br/>
           🚇 <b style={{color:C.text}}>MetroCard 7 días:</b> $34 · 🌡️ 25-32°C + humedad
