@@ -1129,6 +1129,52 @@ function ControlTab() {
   });
   const [newN, setNewN] = useState(""); const [newA, setNewA] = useState(""); const [newC, setNewC] = useState("food"); const [newCur, setNewCur] = useState("USD");
   const [filterCat, setFilterCat] = useState("all");
+  const [scanning, setScanning] = useState(null); // null, "loading", "done", "error"
+  const fileRef = useRef(null);
+
+  // Scan receipt with Claude Vision
+  const scanTicket = async (file) => {
+    setScanning("loading");
+    try {
+      const base64 = await new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = () => res(reader.result.split(",")[1]);
+        reader.onerror = () => rej(new Error("Read failed"));
+        reader.readAsDataURL(file);
+      });
+      const mediaType = file.type || "image/jpeg";
+
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 500,
+          messages: [{
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
+              { type: "text", text: "Analiza este ticket/recibo. Responde SOLO con JSON sin markdown: {\"name\":\"descripción corta del gasto (lugar + qué es)\",\"amount\":número total en la moneda original,\"currency\":\"USD o EUR\",\"category\":\"food|transport|tickets|shopping|football|accom|other\"}. Si no puedes leer el importe, pon amount:0. La categoría más probable para restaurantes/cafés es food, para metro/taxi es transport, para museos/atracciones es tickets." }
+            ]
+          }]
+        })
+      });
+      const data = await response.json();
+      const text = data.content?.[0]?.text || "";
+      const clean = text.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(clean);
+      setNewN(parsed.name || "");
+      setNewA(parsed.amount ? String(parsed.amount) : "");
+      setNewCur(parsed.currency === "EUR" ? "EUR" : "USD");
+      setNewC(parsed.category || "food");
+      setScanning("done");
+      setTimeout(() => setScanning(null), 3000);
+    } catch(e) {
+      console.error("Scan error:", e);
+      setScanning("error");
+      setTimeout(() => setScanning(null), 3000);
+    }
+  };
   const [checklist, setChecklist] = useState(() => {
     const saved = S.get("chk");
     return Array.isArray(saved) ? saved : [
@@ -1236,7 +1282,17 @@ function ControlTab() {
 
           {/* Add expense form */}
           <Card>
-            <div style={{ fontSize:13, fontWeight:700, marginBottom:6 }}>➕ Nuevo gasto</div>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+              <div style={{ fontSize:13, fontWeight:700 }}>➕ Nuevo gasto</div>
+              <button onClick={() => fileRef.current?.click()} disabled={scanning === "loading"} style={{
+                padding:"6px 14px", borderRadius:8, border:`1px solid ${C.purple}40`, background:`${C.purple}15`,
+                color:C.purple, fontWeight:700, fontSize:12, cursor:"pointer"
+              }}>{scanning === "loading" ? "⏳ Leyendo..." : "📸 Foto ticket"}</button>
+              <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{ display:"none" }}
+                onChange={e => { if (e.target.files?.[0]) scanTicket(e.target.files[0]); e.target.value=""; }} />
+            </div>
+            {scanning === "done" && <div style={{ fontSize:12, color:C.green, padding:"6px 10px", background:`${C.green}10`, borderRadius:6, marginBottom:6 }}>✅ Ticket leído — revisa los datos y dale a Añadir</div>}
+            {scanning === "error" && <div style={{ fontSize:12, color:C.red, padding:"6px 10px", background:`${C.red}10`, borderRadius:6, marginBottom:6 }}>❌ No he podido leer el ticket. Mételo manual</div>}
             <input style={{ ...inputStyle, marginBottom:6 }} placeholder="Descripción (ej: Cena pizza Brooklyn)" value={newN} onChange={e => setNewN(e.target.value)} />
             <div style={{ display:"flex", gap:6, marginBottom:6 }}>
               <div style={{ display:"flex", width:"45%", gap:0 }}>
