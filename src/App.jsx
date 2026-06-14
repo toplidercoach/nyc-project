@@ -403,8 +403,11 @@ const NYC_PLACES = [
 // 📅 CALENDAR TAB (EDITABLE + IDEAS)
 // ═══════════════════════════════════════════
 function CalendarTab({ gps }) {
-  const [events, setEvents] = useState(() => S.get("cal2") || DEFAULT_CAL);
-  const [ideas, setIdeas] = useState(() => S.get("ideas") || []);
+  // Safety: ensure arrays even if localStorage/Supabase has corrupted data
+  const safeArr = (v, fallback) => { if (Array.isArray(v)) return v; try { const p = typeof v === "string" ? JSON.parse(v) : v; return Array.isArray(p) ? p : fallback; } catch { return fallback; } };
+
+  const [events, setEvents] = useState(() => safeArr(S.get("cal2"), DEFAULT_CAL));
+  const [ideas, setIdeas] = useState(() => safeArr(S.get("ideas"), []));
   const [day, setDay] = useState(0);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -422,48 +425,51 @@ function CalendarTab({ gps }) {
   // Load from Supabase on mount
   useEffect(() => {
     (async () => {
-      const [remoteEv, remoteId] = await Promise.all([DB.get("events"), DB.get("ideas")]);
+      try {
+        const [remoteEv, remoteId] = await Promise.all([DB.get("events"), DB.get("ideas")]);
 
-      if (remoteEv && remoteEv.data && remoteEv.data.length > 0) {
-        setEvents(remoteEv.data); S.set("cal2", remoteEv.data);
-        lastRemoteTs.current = remoteEv.ts;
-      } else {
-        const local = S.get("cal2") || DEFAULT_CAL;
-        setEvents(local);
-        await DB.set("events", local);
-        lastRemoteTs.current = new Date().toISOString();
+        if (remoteEv && Array.isArray(remoteEv.data) && remoteEv.data.length > 0) {
+          setEvents(remoteEv.data); S.set("cal2", remoteEv.data);
+          lastRemoteTs.current = remoteEv.ts;
+        } else {
+          const local = safeArr(S.get("cal2"), DEFAULT_CAL);
+          setEvents(local);
+          await DB.set("events", local);
+          lastRemoteTs.current = new Date().toISOString();
+        }
+
+        if (remoteId && Array.isArray(remoteId.data) && remoteId.data.length > 0) {
+          setIdeas(remoteId.data); S.set("ideas", remoteId.data);
+        }
+
+        setSyncStatus(remoteEv !== null ? "synced" : "offline");
+      } catch(e) {
+        console.error("Sync load error:", e);
+        setSyncStatus("offline");
       }
-
-      if (remoteId && remoteId.data && remoteId.data.length > 0) {
-        setIdeas(remoteId.data); S.set("ideas", remoteId.data);
-      } else {
-        const local = S.get("ideas") || [];
-        setIdeas(local);
-        if (local.length > 0) await DB.set("ideas", local);
-      }
-
-      setSyncStatus(remoteEv !== null ? "synced" : "offline");
     })();
   }, []);
 
-  // Poll Supabase every 6s for changes from other travelers
+  // Poll Supabase every 6s
   useEffect(() => {
     pollTimer.current = setInterval(async () => {
       if (syncStatus === "saving") return;
-      const [remoteEv, remoteId] = await Promise.all([DB.get("events"), DB.get("ideas")]);
-      if (remoteEv && remoteEv.ts !== lastRemoteTs.current && remoteEv.data && remoteEv.data.length > 0) {
-        lastRemoteTs.current = remoteEv.ts;
-        setEvents(remoteEv.data); S.set("cal2", remoteEv.data);
-      }
-      if (remoteId && remoteId.data && remoteId.data.length > 0) {
-        setIdeas(remoteId.data); S.set("ideas", remoteId.data);
-      }
-      if (remoteEv !== null) setSyncStatus("synced");
+      try {
+        const [remoteEv, remoteId] = await Promise.all([DB.get("events"), DB.get("ideas")]);
+        if (remoteEv && remoteEv.ts !== lastRemoteTs.current && Array.isArray(remoteEv.data) && remoteEv.data.length > 0) {
+          lastRemoteTs.current = remoteEv.ts;
+          setEvents(remoteEv.data); S.set("cal2", remoteEv.data);
+        }
+        if (remoteId && Array.isArray(remoteId.data) && remoteId.data.length > 0) {
+          setIdeas(remoteId.data); S.set("ideas", remoteId.data);
+        }
+        if (remoteEv !== null) setSyncStatus("synced");
+      } catch(e) { console.error("Poll error:", e); }
     }, 6000);
     return () => clearInterval(pollTimer.current);
   }, [syncStatus]);
 
-  // Debounced save to Supabase when state changes
+  // Debounced save
   const mounted = useRef(false);
   useEffect(() => {
     if (!mounted.current) { mounted.current = true; return; }
@@ -471,15 +477,19 @@ function CalendarTab({ gps }) {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSyncStatus("saving");
     saveTimer.current = setTimeout(async () => {
-      const clean = events.map(({ addr, searching, geoResult, geoError, ...rest }) => rest);
-      const [okE, okI] = await Promise.all([DB.set("events", clean), DB.set("ideas", ideas)]);
-      if (okE) lastRemoteTs.current = new Date().toISOString();
-      setSyncStatus(okE && okI ? "synced" : "offline");
+      try {
+        const clean = (Array.isArray(events) ? events : []).map(({ addr, searching, geoResult, geoError, ...rest }) => rest);
+        const [okE, okI] = await Promise.all([DB.set("events", clean), DB.set("ideas", ideas)]);
+        if (okE) lastRemoteTs.current = new Date().toISOString();
+        setSyncStatus(okE && okI ? "synced" : "offline");
+      } catch(e) { console.error("Save error:", e); setSyncStatus("offline"); }
     }, 1000);
   }, [events, ideas]);
 
-  const dayEvt = events.filter(ev => ev.day === day).sort((a,b) => a.s.localeCompare(b.s));
-  const nextId = Math.max(0, ...events.map(ev => ev.id), ...ideas.map(x => x.id || 0)) + 1;
+  const evts = Array.isArray(events) ? events : DEFAULT_CAL;
+  const ids = Array.isArray(ideas) ? ideas : [];
+  const dayEvt = evts.filter(ev => ev.day === day).sort((a,b) => (a.s||"").localeCompare(b.s||""));
+  const nextId = Math.max(0, ...evts.map(ev => ev.id || 0), ...ids.map(x => x.id || 0)) + 1;
   const overlap = (s, e, skip) => dayEvt.some(ev => ev.id !== skip && s < ev.e && e > ev.s);
 
   const save = () => {
