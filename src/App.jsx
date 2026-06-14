@@ -1106,64 +1106,169 @@ function AITab() {
 // ═══════════════════════════════════════════
 function ControlTab() {
   const [sub, setSub] = useState("budget");
-  const [expenses, setExpenses] = useState(() => S.get("exp") || [
-    { name:"Vuelos (5 pers)", amount:5050.25, cat:"transport", fixed:true },
-    { name:"Seguro IMAWAY", amount:392.87, cat:"other", fixed:true },
-    { name:"Comisión Sequra", amount:147.00, cat:"other", fixed:true },
-  ]);
-  const [newN, setNewN] = useState(""); const [newA, setNewA] = useState(""); const [newC, setNewC] = useState("food");
-  const [checklist, setChecklist] = useState(() => S.get("chk") || [
-    { t:"✅ Pasaporte Rosa renovado", d:true }, { t:"Tramitar ESTA (14$/pers)", d:false },
-    { t:"Seguro ✓", d:true }, { t:"Vuelos ✓", d:true }, { t:"Airbnb ✓", d:true },
-    { t:"Adaptadores enchufe", d:false }, { t:"Revolut/N26", d:false },
-    { t:"Reservar ferry Libertad", d:false }, { t:"eSIM datos", d:false },
-    { t:"Entradas Mundial", d:false }, { t:"Apps: Maps, Citymapper", d:false },
-    { t:"Protector solar", d:false }, { t:"Dólares efectivo", d:false },
-  ]);
+  const [rate, setRate] = useState(0.86);
+  const [rateTime, setRateTime] = useState(null);
+
+  // Fetch live USD→EUR rate
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("https://api.frankfurter.app/latest?from=USD&to=EUR");
+        const d = await r.json();
+        if (d.rates?.EUR) { setRate(d.rates.EUR); setRateTime(d.date); }
+      } catch(e) { console.error("Rate fetch:", e); }
+    })();
+  }, []);
+  const [expenses, setExpenses] = useState(() => {
+    const saved = S.get("exp");
+    return Array.isArray(saved) ? saved : [
+      { name:"Vuelos (5 pers)", amount:5050.25, cur:"EUR", cat:"transport", fixed:true },
+      { name:"Seguro IMAWAY", amount:392.87, cur:"EUR", cat:"other", fixed:true },
+      { name:"Comisión Sequra", amount:147.00, cur:"EUR", cat:"other", fixed:true },
+    ];
+  });
+  const [newN, setNewN] = useState(""); const [newA, setNewA] = useState(""); const [newC, setNewC] = useState("food"); const [newCur, setNewCur] = useState("USD");
+  const [filterCat, setFilterCat] = useState("all");
+  const [checklist, setChecklist] = useState(() => {
+    const saved = S.get("chk");
+    return Array.isArray(saved) ? saved : [
+      { t:"✅ Pasaporte Rosa renovado", d:true }, { t:"Tramitar ESTA (14$/pers)", d:false },
+      { t:"Seguro ✓", d:true }, { t:"Vuelos ✓", d:true }, { t:"Airbnb ✓", d:true },
+      { t:"Adaptadores enchufe", d:false }, { t:"Revolut/N26", d:false },
+      { t:"Reservar ferry Libertad", d:false }, { t:"eSIM datos", d:false },
+      { t:"Entradas Mundial", d:false }, { t:"Apps: Maps, Citymapper", d:false },
+      { t:"Protector solar", d:false }, { t:"Dólares efectivo", d:false },
+    ];
+  });
   const [notes, setNotes] = useState(() => S.get("notes") || "");
+  const [converter, setConverter] = useState({ usd:"", eur:"" });
 
   useEffect(() => { S.set("exp", expenses); }, [expenses]);
   useEffect(() => { S.set("chk", checklist); }, [checklist]);
   useEffect(() => { S.set("notes", notes); }, [notes]);
 
-  const cats = [{id:"transport",l:"🚇 Transporte",c:C.blue},{id:"food",l:"🍕 Comida",c:C.gold},{id:"tickets",l:"🎟️ Entradas",c:C.purple},{id:"shopping",l:"🛍️ Compras",c:C.pink},{id:"football",l:"⚽ Mundial",c:C.green},{id:"other",l:"📦 Otros",c:C.muted}];
-  const total = expenses.reduce((s,e) => s+(e.amount||0), 0);
-  const addExp = () => { if (!newN.trim()||!newA) return; setExpenses([...expenses, { name:newN.trim(), amount:parseFloat(newA), cat:newC }]); setNewN(""); setNewA(""); };
+  const cats = [{id:"transport",l:"🚇 Transporte",c:C.blue},{id:"food",l:"🍕 Comida",c:C.gold},{id:"tickets",l:"🎟️ Entradas",c:C.purple},{id:"shopping",l:"🛍️ Compras",c:C.pink},{id:"football",l:"⚽ Mundial",c:C.green},{id:"accom",l:"🏠 Alojamiento",c:C.accent},{id:"other",l:"📦 Otros",c:C.muted}];
+
+  // Convert any expense to EUR
+  const toEur = (e) => e.cur === "USD" ? e.amount * rate : e.amount;
+  const totalEur = expenses.reduce((s,e) => s + toEur(e), 0);
+  const totalUsd = expenses.reduce((s,e) => s + (e.cur === "USD" ? e.amount : e.amount / rate), 0);
+
+  // Category totals
+  const catTotals = cats.map(cat => ({
+    ...cat,
+    eur: expenses.filter(e => e.cat === cat.id).reduce((s,e) => s + toEur(e), 0),
+    count: expenses.filter(e => e.cat === cat.id).length
+  })).filter(c => c.count > 0);
+
+  const addExp = () => {
+    if (!newN.trim()||!newA) return;
+    setExpenses([...expenses, { name:newN.trim(), amount:parseFloat(newA), cur:newCur, cat:newC }]);
+    setNewN(""); setNewA("");
+  };
+
+  const filtered = filterCat === "all" ? expenses : expenses.filter(e => e.cat === filterCat);
   const doneN = checklist.filter(c=>c.d).length;
 
   return (
     <div>
       <div style={{ display:"flex", gap:4, padding:"10px 14px 6px", background:C.bg2 }}>
         {[["budget","💰 Gastos"],["check","✅ Check"],["notes","📝 Notas"]].map(([k,l]) => (
-          <button key={k} onClick={() => setSub(k)} style={{ flex:1, padding:"7px", borderRadius:8, border:`1px solid ${sub===k?C.accent:C.border}`, background:sub===k?`${C.accent}18`:"transparent", color:sub===k?C.accent:C.muted, fontSize:11, fontWeight:700, cursor:"pointer" }}>{l}</button>
+          <button key={k} onClick={() => setSub(k)} style={{ flex:1, padding:"8px", borderRadius:8, border:`1px solid ${sub===k?C.accent:C.border}`, background:sub===k?`${C.accent}18`:"transparent", color:sub===k?C.accent:C.muted, fontSize:13, fontWeight:700, cursor:"pointer" }}>{l}</button>
         ))}
       </div>
       <div style={{ padding:"12px 14px" }}>
         {sub === "budget" && <>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:14 }}>
-            {[["TOTAL",total,C.accent],["POR PERSONA",total/5,C.green]].map(([l,v,c],i) => (
-              <div key={i} style={{ background:`${c}12`, borderRadius:10, padding:12, textAlign:"center", border:`1px solid ${c}25` }}>
-                <div style={{ fontSize:9, color:c, fontWeight:700 }}>{l}</div>
-                <div style={{ fontSize:20, fontWeight:900, color:c }}>{v.toFixed(2)} €</div>
+          {/* Totals */}
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:10 }}>
+            <div style={{ background:`${C.accent}12`, borderRadius:10, padding:12, textAlign:"center", border:`1px solid ${C.accent}25` }}>
+              <div style={{ fontSize:11, color:C.accent, fontWeight:700 }}>TOTAL</div>
+              <div style={{ fontSize:22, fontWeight:900, color:C.accent }}>{totalEur.toFixed(2)} €</div>
+              <div style={{ fontSize:11, color:C.muted }}>${totalUsd.toFixed(2)}</div>
+            </div>
+            <div style={{ background:`${C.green}12`, borderRadius:10, padding:12, textAlign:"center", border:`1px solid ${C.green}25` }}>
+              <div style={{ fontSize:11, color:C.green, fontWeight:700 }}>POR PERSONA</div>
+              <div style={{ fontSize:22, fontWeight:900, color:C.green }}>{(totalEur/5).toFixed(2)} €</div>
+              <div style={{ fontSize:11, color:C.muted }}>${(totalUsd/5).toFixed(2)}</div>
+            </div>
+          </div>
+
+          {/* Quick converter */}
+          <Card style={{ background:`${C.gold}08`, borderColor:`${C.gold}25` }}>
+            <div style={{ fontSize:13, fontWeight:700, color:C.gold, marginBottom:6 }}>💱 Conversor · 1$ = {rate.toFixed(4)}€ {rateTime && <span style={{ fontSize:10, fontWeight:400, color:C.muted }}>(BCE {rateTime})</span>}</div>
+            <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+              <div style={{ flex:1 }}>
+                <label style={{ fontSize:11, color:C.muted }}>$ USD</label>
+                <input style={{ ...inputStyle, fontSize:16, fontWeight:700 }} type="number" step="0.01" placeholder="0.00" value={converter.usd}
+                  onChange={e => setConverter({ usd:e.target.value, eur: e.target.value ? (parseFloat(e.target.value)*rate).toFixed(2) : "" })} />
+              </div>
+              <span style={{ fontSize:18, color:C.muted, paddingTop:16 }}>→</span>
+              <div style={{ flex:1 }}>
+                <label style={{ fontSize:11, color:C.muted }}>€ EUR</label>
+                <input style={{ ...inputStyle, fontSize:16, fontWeight:700 }} type="number" step="0.01" placeholder="0.00" value={converter.eur}
+                  onChange={e => setConverter({ eur:e.target.value, usd: e.target.value ? (parseFloat(e.target.value)/rate).toFixed(2) : "" })} />
+              </div>
+            </div>
+          </Card>
+
+          {/* Category breakdown */}
+          <Card>
+            <div style={{ fontSize:13, fontWeight:700, marginBottom:8 }}>📊 Por categoría</div>
+            <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
+              <button onClick={() => setFilterCat("all")} style={{ padding:"5px 10px", borderRadius:14, fontSize:11, fontWeight:600, cursor:"pointer", border:`1px solid ${filterCat==="all"?C.accent:C.border}`, background:filterCat==="all"?`${C.accent}20`:"transparent", color:filterCat==="all"?C.accent:C.muted }}>Todos</button>
+              {catTotals.map(cat => (
+                <button key={cat.id} onClick={() => setFilterCat(filterCat===cat.id?"all":cat.id)} style={{ padding:"5px 10px", borderRadius:14, fontSize:11, fontWeight:600, cursor:"pointer", border:`1px solid ${filterCat===cat.id?cat.c:C.border}`, background:filterCat===cat.id?`${cat.c}20`:"transparent", color:filterCat===cat.id?cat.c:C.muted }}>
+                  {cat.l.split(" ")[0]} {cat.eur.toFixed(0)}€
+                </button>
+              ))}
+            </div>
+            {/* Category bars */}
+            {catTotals.map(cat => (
+              <div key={cat.id} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+                <span style={{ fontSize:11, width:20, textAlign:"center" }}>{cat.l.split(" ")[0]}</span>
+                <div style={{ flex:1, height:8, borderRadius:4, background:`${C.border}` }}>
+                  <div style={{ width:`${Math.min(100,(cat.eur/totalEur)*100)}%`, height:"100%", borderRadius:4, background:cat.c }} />
+                </div>
+                <span style={{ fontSize:11, fontWeight:700, color:cat.c, minWidth:55, textAlign:"right" }}>{cat.eur.toFixed(0)}€</span>
               </div>
             ))}
-          </div>
-          <Card>
-            <input style={{ ...inputStyle, marginBottom:6 }} placeholder="Descripción" value={newN} onChange={e => setNewN(e.target.value)} />
-            <div style={{ display:"flex", gap:6, marginBottom:6 }}>
-              <input style={{ ...inputStyle, width:"35%" }} placeholder="€" type="number" step="0.01" value={newA} onChange={e => setNewA(e.target.value)} onKeyDown={e => e.key==="Enter" && addExp()} />
-              <select style={{ ...inputStyle, width:"65%" }} value={newC} onChange={e => setNewC(e.target.value)}>{cats.map(c => <option key={c.id} value={c.id}>{c.l}</option>)}</select>
-            </div>
-            <button onClick={addExp} style={{ width:"100%", padding:10, borderRadius:8, border:"none", background:C.accent, color:"#fff", fontWeight:700, cursor:"pointer" }}>Añadir gasto</button>
           </Card>
-          {expenses.map((e,i) => {
+
+          {/* Add expense form */}
+          <Card>
+            <div style={{ fontSize:13, fontWeight:700, marginBottom:6 }}>➕ Nuevo gasto</div>
+            <input style={{ ...inputStyle, marginBottom:6 }} placeholder="Descripción (ej: Cena pizza Brooklyn)" value={newN} onChange={e => setNewN(e.target.value)} />
+            <div style={{ display:"flex", gap:6, marginBottom:6 }}>
+              <div style={{ display:"flex", width:"45%", gap:0 }}>
+                <select style={{ ...inputStyle, width:"40%", borderRadius:"10px 0 0 10px", fontSize:14, fontWeight:700, padding:"10px 4px", textAlign:"center" }} value={newCur} onChange={e => setNewCur(e.target.value)}>
+                  <option value="USD">$</option>
+                  <option value="EUR">€</option>
+                </select>
+                <input style={{ ...inputStyle, width:"60%", borderRadius:"0 10px 10px 0", borderLeft:"none", fontSize:16 }} placeholder="0.00" type="number" step="0.01" value={newA} onChange={e => setNewA(e.target.value)} onKeyDown={e => e.key==="Enter" && addExp()} />
+              </div>
+              <select style={{ ...inputStyle, width:"55%", fontSize:12 }} value={newC} onChange={e => setNewC(e.target.value)}>{cats.map(c => <option key={c.id} value={c.id}>{c.l}</option>)}</select>
+            </div>
+            {newA && newCur === "USD" && <div style={{ fontSize:12, color:C.gold, marginBottom:6 }}>💱 {newA}$ = {(parseFloat(newA||0)*rate).toFixed(2)}€</div>}
+            <button onClick={addExp} style={{ width:"100%", padding:12, borderRadius:8, border:"none", background:C.accent, color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer" }}>Añadir gasto</button>
+          </Card>
+
+          {/* Expense list */}
+          {filtered.map((e,i) => {
             const ct = cats.find(c=>c.id===e.cat);
+            const origIdx = expenses.indexOf(e);
             return (
-              <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 14px", borderBottom:`1px solid ${C.border}` }}>
-                <div><div style={{ fontSize:12, fontWeight:600 }}>{e.name}</div><div style={{ fontSize:10, color:ct?.c }}>{ct?.l}</div></div>
-                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                  <span style={{ fontSize:13, fontWeight:700 }}>{e.amount.toFixed(2)} €</span>
-                  {!e.fixed && <button onClick={() => setExpenses(expenses.filter((_,j)=>j!==i))} style={{ background:"none", border:"none", color:C.red, cursor:"pointer" }}>✕</button>}
+              <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 14px", borderBottom:`1px solid ${C.border}`, borderLeft:`3px solid ${ct?.c||C.muted}` }}>
+                <div>
+                  <div style={{ fontSize:14, fontWeight:600 }}>{e.name}</div>
+                  <div style={{ fontSize:11, color:ct?.c }}>{ct?.l}</div>
+                </div>
+                <div style={{ display:"flex", alignItems:"center", gap:6, textAlign:"right" }}>
+                  <div>
+                    <div style={{ fontSize:15, fontWeight:700 }}>{e.cur === "USD" ? `$${e.amount.toFixed(2)}` : `${e.amount.toFixed(2)}€`}</div>
+                    {e.cur === "USD" && <div style={{ fontSize:10, color:C.muted }}>{(e.amount*rate).toFixed(2)}€</div>}
+                    {e.cur === "EUR" && <div style={{ fontSize:10, color:C.muted }}>${(e.amount/rate).toFixed(2)}</div>}
+                  </div>
+                  {!e.fixed && <button onClick={() => setExpenses(expenses.filter((_,j)=>j!==origIdx))} style={{ background:"none", border:"none", color:C.red, cursor:"pointer", fontSize:12, opacity:0.5 }}>✕</button>}
                 </div>
               </div>
             );
@@ -1172,13 +1277,13 @@ function ControlTab() {
         {sub === "check" && (
           <Card>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-              <span style={{ fontSize:14, fontWeight:700 }}>📋 {doneN}/{checklist.length}</span>
+              <span style={{ fontSize:15, fontWeight:700 }}>📋 {doneN}/{checklist.length}</span>
               <div style={{ width:80, height:6, borderRadius:3, background:C.border, overflow:"hidden" }}><div style={{ width:`${(doneN/checklist.length)*100}%`, height:"100%", background:C.green, transition:"width .3s" }} /></div>
             </div>
             {checklist.map((item,i) => (
-              <div key={i} onClick={() => { const u=[...checklist]; u[i]={...u[i], d:!u[i].d}; setChecklist(u); }} style={{ display:"flex", alignItems:"center", gap:10, padding:"7px 0", cursor:"pointer", borderBottom:`1px solid ${C.border}` }}>
-                <div style={{ width:18, height:18, borderRadius:4, border:`2px solid ${item.d?C.green:C.border}`, background:item.d?`${C.green}18`:"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontSize:10, color:C.green }}>{item.d && "✓"}</div>
-                <span style={{ fontSize:12, color:item.d?C.muted:C.text, textDecoration:item.d?"line-through":"none" }}>{item.t}</span>
+              <div key={i} onClick={() => { const u=[...checklist]; u[i]={...u[i], d:!u[i].d}; setChecklist(u); }} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", cursor:"pointer", borderBottom:`1px solid ${C.border}` }}>
+                <div style={{ width:20, height:20, borderRadius:5, border:`2px solid ${item.d?C.green:C.border}`, background:item.d?`${C.green}18`:"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontSize:11, color:C.green }}>{item.d && "✓"}</div>
+                <span style={{ fontSize:14, color:item.d?C.muted:C.text, textDecoration:item.d?"line-through":"none" }}>{item.t}</span>
               </div>
             ))}
           </Card>
