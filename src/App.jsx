@@ -797,6 +797,10 @@ function CalendarTab({ gps }) {
         // Distance from previous end → this start
         const dist = evStart ? distInfo(evStart.lat, evStart.lng, fromPt) : null;
         const mapsUrl = evStart ? `https://www.google.com/maps/dir/${fromPt.lat},${fromPt.lng}/${evStart.lat},${evStart.lng}/@${evStart.lat},${evStart.lng},14z/data=!3m1!4b1!4m2!4m1!3e2` : null;
+        // Internal trip: start → end of THIS event (when they differ)
+        const hasInternalTrip = ev.endLat && ev.startLat && (ev.endLat !== ev.startLat || ev.endLng !== ev.startLng);
+        const innerDist = hasInternalTrip ? distInfo(ev.endLat, ev.endLng, { lat:ev.startLat, lng:ev.startLng }) : null;
+        const innerMapsUrl = hasInternalTrip ? `https://www.google.com/maps/dir/${ev.startLat},${ev.startLng}/${ev.endLat},${ev.endLng}/@${ev.endLat},${ev.endLng},14z/data=!3m1!4b1!4m2!4m1!3e2` : null;
         return (
           <div key={ev.id} style={{ marginBottom:6 }}>
             {/* Distance connector from previous */}
@@ -828,6 +832,16 @@ function CalendarTab({ gps }) {
                     <span style={{ fontSize:9, padding:"1px 5px", borderRadius:4, background:`${C.green}15`, color:C.green }}>🚕~{dist.carMin}min</span>
                     {mapsUrl && <a href={mapsUrl} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ fontSize:9, padding:"1px 5px", borderRadius:4, background:`${C.purple}15`, color:C.purple, textDecoration:"none" }}>🗺️ Mapa</a>}
                     {mapsUrl && <a href={mapsUrl.replace("!3e2","!3e3")} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ fontSize:9, padding:"1px 5px", borderRadius:4, background:`${C.accent}15`, color:C.accent, textDecoration:"none" }}>🚇 Transit</a>}
+                  </div>
+                )}
+                {/* Internal trip: start → end within this event */}
+                {innerDist && (
+                  <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginTop:4, alignItems:"center", padding:"4px 6px", background:`${C.gold}08`, borderRadius:6 }}>
+                    <span style={{ fontSize:9, color:C.gold, fontWeight:700 }}>↪ Trayecto del evento:</span>
+                    <span style={{ fontSize:9, padding:"1px 5px", borderRadius:4, background:`${C.blue}15`, color:C.blue }}>{innerDist.km}km</span>
+                    <span style={{ fontSize:9, padding:"1px 5px", borderRadius:4, background:`${C.gold}15`, color:C.gold }}>🚶{innerDist.walkMin}min</span>
+                    <span style={{ fontSize:9, padding:"1px 5px", borderRadius:4, background:`${C.green}15`, color:C.green }}>🚕~{innerDist.carMin}min</span>
+                    {innerMapsUrl && <a href={innerMapsUrl} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ fontSize:9, padding:"1px 5px", borderRadius:4, background:`${C.purple}15`, color:C.purple, textDecoration:"none" }}>🗺️ Ruta</a>}
                   </div>
                 )}
                 {/* Action buttons */}
