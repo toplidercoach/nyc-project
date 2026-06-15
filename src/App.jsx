@@ -451,7 +451,8 @@ function CalendarTab({ gps }) {
   const [searchEnd, setSearchEnd] = useState({ q:"", results:[], loading:false });
   const [uploading, setUploading] = useState(false);
   const [linkInput, setLinkInput] = useState("");
-  const [viewTickets, setViewTickets] = useState(null); // event id whose tickets are shown
+  const [viewTickets, setViewTickets] = useState(null);
+  const [pickTarget, setPickTarget] = useState("start"); // "start" or "end" — which field the quick buttons fill
   const ticketFileRef = useRef(null);
   const saveTimer = useRef(null);
   const pollTimer = useRef(null);
@@ -592,6 +593,17 @@ function CalendarTab({ gps }) {
   };
 
   const removeAttachment = (idx) => setForm(f => ({ ...f, attachments:f.attachments.filter((_,i)=>i!==idx) }));
+
+  // Fill start or end location from a quick button, based on pickTarget
+  const fillLocation = (p) => {
+    if (pickTarget === "end") {
+      setForm(f => ({ ...f, endLat:p.lat, endLng:p.lng, endLoc:p.n }));
+      setSearchEnd({ q:p.n, results:[], loading:false });
+    } else {
+      setForm(f => ({ ...f, startLat:p.lat, startLng:p.lng, startLoc:p.n }));
+      setSearchStart({ q:p.n, results:[], loading:false });
+    }
+  };
 
   // Address search with dropdown (Nominatim, biased to NYC area)
   const doSearch = (query, which) => {
@@ -917,34 +929,34 @@ function CalendarTab({ gps }) {
             </div>
             {form.endLoc && <div style={{ fontSize:10, color:C.green, marginBottom:4 }}>✓ Fin: {form.endLoc}</div>}
 
-            {/* PATH stations quick buttons */}
-            <div style={{ marginTop:6, padding:"6px 8px", background:`${C.blue}08`, borderRadius:8, border:`1px solid ${C.blue}20` }}>
-              <div style={{ fontSize:10, color:C.blue, fontWeight:700, marginBottom:4 }}>🚆 Estaciones PATH (toca para poner como inicio · mantén lógica fin tú)</div>
-              <div style={{ fontSize:9, color:C.muted, marginBottom:3 }}>Nueva Jersey:</div>
-              <div style={{ display:"flex", gap:3, flexWrap:"wrap", marginBottom:5 }}>
-                {PATH_STATIONS.filter(p => p.nj).map((p,i) => (
-                  <div key={i} style={{ display:"flex", border:`1px solid ${C.blue}30`, borderRadius:8, overflow:"hidden" }}>
-                    <button onClick={() => { setForm(f=>({...f, startLat:p.lat, startLng:p.lng, startLoc:p.n})); setSearchStart({q:p.n, results:[], loading:false}); }} style={{ padding:"3px 6px", border:"none", background:"transparent", color:C.blue, fontSize:9, cursor:"pointer" }}>{p.n}</button>
-                    <button onClick={() => { setForm(f=>({...f, endLat:p.lat, endLng:p.lng, endLoc:p.n})); setSearchEnd({q:p.n, results:[], loading:false}); }} title="Poner como fin" style={{ padding:"3px 5px", border:"none", borderLeft:`1px solid ${C.blue}30`, background:`${C.blue}10`, color:C.blue, fontSize:9, cursor:"pointer", fontWeight:700 }}>🏁</button>
-                  </div>
-                ))}
+            {/* Target selector: do quick buttons fill START or END? */}
+            <div style={{ marginTop:8, padding:"8px", background:`${C.bg2}`, borderRadius:8, border:`1px solid ${C.border}` }}>
+              <div style={{ fontSize:11, color:C.muted, marginBottom:6 }}>Atajos rápidos → rellenan:</div>
+              <div style={{ display:"flex", gap:6, marginBottom:8 }}>
+                <button onClick={() => setPickTarget("start")} style={{ flex:1, padding:"7px", borderRadius:7, border:`1px solid ${pickTarget==="start"?C.accent:C.border}`, background:pickTarget==="start"?`${C.accent}20`:"transparent", color:pickTarget==="start"?C.accent:C.muted, fontSize:12, fontWeight:700, cursor:"pointer" }}>📍 INICIO</button>
+                <button onClick={() => setPickTarget("end")} style={{ flex:1, padding:"7px", borderRadius:7, border:`1px solid ${pickTarget==="end"?C.green:C.border}`, background:pickTarget==="end"?`${C.green}20`:"transparent", color:pickTarget==="end"?C.green:C.muted, fontSize:12, fontWeight:700, cursor:"pointer" }}>🏁 FIN</button>
               </div>
-              <div style={{ fontSize:9, color:C.muted, marginBottom:3 }}>Manhattan:</div>
-              <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
-                {PATH_STATIONS.filter(p => !p.nj).map((p,i) => (
-                  <div key={i} style={{ display:"flex", border:`1px solid ${C.purple}30`, borderRadius:8, overflow:"hidden" }}>
-                    <button onClick={() => { setForm(f=>({...f, startLat:p.lat, startLng:p.lng, startLoc:p.n})); setSearchStart({q:p.n, results:[], loading:false}); }} style={{ padding:"3px 6px", border:"none", background:"transparent", color:C.purple, fontSize:9, cursor:"pointer" }}>{p.n}</button>
-                    <button onClick={() => { setForm(f=>({...f, endLat:p.lat, endLng:p.lng, endLoc:p.n})); setSearchEnd({q:p.n, results:[], loading:false}); }} title="Poner como fin" style={{ padding:"3px 5px", border:"none", borderLeft:`1px solid ${C.purple}30`, background:`${C.purple}10`, color:C.purple, fontSize:9, cursor:"pointer", fontWeight:700 }}>🏁</button>
-                  </div>
-                ))}
-              </div>
-            </div>
 
-            {/* Quick places shortcuts */}
-            <div style={{ display:"flex", gap:3, flexWrap:"wrap", marginTop:6 }}>
-              {NYC_PLACES.filter(p => p.lat && p.lat !== 0).slice(0,8).map((p,i) => (
-                <button key={i} onClick={() => { setForm(f=>({...f, startLat:p.lat, startLng:p.lng, startLoc:p.n})); setSearchStart({q:p.n, results:[], loading:false}); }} style={{ padding:"3px 7px", borderRadius:10, border:`1px solid ${C.border}`, background:"transparent", color:C.muted, fontSize:9, cursor:"pointer" }}>{p.n}</button>
-              ))}
+              {/* PATH stations */}
+              <div style={{ fontSize:10, color:C.blue, fontWeight:700, marginBottom:3 }}>🚆 PATH · Nueva Jersey</div>
+              <div style={{ display:"flex", gap:3, flexWrap:"wrap", marginBottom:6 }}>
+                {PATH_STATIONS.filter(p => p.nj).map((p,i) => (
+                  <button key={i} onClick={() => fillLocation(p)} style={{ padding:"4px 8px", borderRadius:8, border:`1px solid ${C.blue}40`, background:`${C.blue}10`, color:C.blue, fontSize:10, cursor:"pointer" }}>{p.n}</button>
+                ))}
+              </div>
+              <div style={{ fontSize:10, color:C.purple, fontWeight:700, marginBottom:3 }}>🚇 PATH · Manhattan</div>
+              <div style={{ display:"flex", gap:3, flexWrap:"wrap", marginBottom:6 }}>
+                {PATH_STATIONS.filter(p => !p.nj).map((p,i) => (
+                  <button key={i} onClick={() => fillLocation(p)} style={{ padding:"4px 8px", borderRadius:8, border:`1px solid ${C.purple}40`, background:`${C.purple}10`, color:C.purple, fontSize:10, cursor:"pointer" }}>{p.n}</button>
+                ))}
+              </div>
+              {/* Other places */}
+              <div style={{ fontSize:10, color:C.muted, fontWeight:700, marginBottom:3 }}>📍 Sitios conocidos</div>
+              <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
+                {NYC_PLACES.filter(p => p.lat && p.lat !== 0).slice(0,8).map((p,i) => (
+                  <button key={i} onClick={() => fillLocation(p)} style={{ padding:"4px 8px", borderRadius:8, border:`1px solid ${C.border}`, background:"transparent", color:C.muted, fontSize:10, cursor:"pointer" }}>{p.n}</button>
+                ))}
+              </div>
             </div>
           </div>
 
