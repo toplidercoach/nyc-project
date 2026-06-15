@@ -411,16 +411,19 @@ function CalendarTab({ gps }) {
   const [day, setDay] = useState(0);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ t:"", s:"09:00", e:"11:00", c:C.accent, lat:null, lng:null, loc:"" });
+  const [form, setForm] = useState({ t:"", s:"09:00", e:"11:00", c:C.accent, startLat:null, startLng:null, startLoc:"", endLat:null, endLng:null, endLoc:"" });
   const [moving, setMoving] = useState(null);
   const [showIdeas, setShowIdeas] = useState(false);
   const [ideaText, setIdeaText] = useState("");
   const [scheduleIdea, setScheduleIdea] = useState(null);
-  const [showPlaces, setShowPlaces] = useState(false);
   const [syncStatus, setSyncStatus] = useState("loading");
+  // Address search dropdown state
+  const [searchStart, setSearchStart] = useState({ q:"", results:[], loading:false });
+  const [searchEnd, setSearchEnd] = useState({ q:"", results:[], loading:false });
   const saveTimer = useRef(null);
   const pollTimer = useRef(null);
   const lastRemoteTs = useRef(null);
+  const searchTimer = useRef(null);
 
   // Load from Supabase on mount
   useEffect(() => {
@@ -494,26 +497,75 @@ function CalendarTab({ gps }) {
 
   const save = () => {
     if (!form.t.trim()) return;
-    const loc = form.lat ? { lat:form.lat, lng:form.lng, loc:form.loc } : {};
+    const data = {
+      t:form.t, s:form.s, e:form.e, c:form.c,
+      startLat:form.startLat, startLng:form.startLng, startLoc:form.startLoc,
+      endLat:form.endLat, endLng:form.endLng, endLoc:form.endLoc
+    };
     if (editing !== null) {
-      setEvents(events.map(ev => ev.id === editing ? { ...ev, t:form.t, s:form.s, e:form.e, c:form.c, ...loc } : ev));
+      setEvents(events.map(ev => ev.id === editing ? { ...ev, ...data } : ev));
       setEditing(null);
     } else {
-      setEvents([...events, { ...form, ...loc, id:nextId, day }]);
+      setEvents([...events, { ...data, id:nextId, day }]);
     }
-    setForm({ t:"", s:"09:00", e:"11:00", c:C.accent, lat:null, lng:null, loc:"" });
-    setAdding(false); setShowPlaces(false);
+    resetForm();
+    setAdding(false);
+  };
+
+  const resetForm = () => {
+    setForm({ t:"", s:"09:00", e:"11:00", c:C.accent, startLat:null, startLng:null, startLoc:"", endLat:null, endLng:null, endLoc:"" });
+    setSearchStart({ q:"", results:[], loading:false });
+    setSearchEnd({ q:"", results:[], loading:false });
   };
 
   const startEdit = (ev) => {
     if (ev.f) return;
     setMoving(null);
-    setForm({ t:ev.t, s:ev.s, e:ev.e, c:ev.c||C.accent, lat:ev.lat||null, lng:ev.lng||null, loc:ev.loc||"" });
+    setForm({
+      t:ev.t, s:ev.s, e:ev.e, c:ev.c||C.accent,
+      startLat:ev.startLat||ev.lat||null, startLng:ev.startLng||ev.lng||null, startLoc:ev.startLoc||ev.loc||"",
+      endLat:ev.endLat||null, endLng:ev.endLng||null, endLoc:ev.endLoc||""
+    });
+    setSearchStart({ q:ev.startLoc||ev.loc||"", results:[], loading:false });
+    setSearchEnd({ q:ev.endLoc||"", results:[], loading:false });
     setEditing(ev.id);
-    setAdding(true); setShowPlaces(false);
+    setAdding(true);
   };
 
-  const cancel = () => { setAdding(false); setEditing(null); setShowPlaces(false); setForm({ t:"", s:"09:00", e:"11:00", c:C.accent, lat:null, lng:null, loc:"" }); };
+  const cancel = () => { setAdding(false); setEditing(null); resetForm(); };
+
+  // Address search with dropdown (Nominatim, biased to NYC area)
+  const doSearch = (query, which) => {
+    const setSearch = which === "start" ? setSearchStart : setSearchEnd;
+    setSearch(s => ({ ...s, q:query, loading:true }));
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (!query.trim() || query.length < 3) { setSearch(s => ({ ...s, results:[], loading:false })); return; }
+    searchTimer.current = setTimeout(async () => {
+      try {
+        // Bounding box around NYC + Jersey City: viewbox=west,north,east,south
+        const vb = "-74.30,40.92,-73.70,40.55";
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=6&addressdetails=1&viewbox=${vb}&bounded=1&countrycodes=us`;
+        const res = await fetch(url, { headers: { "Accept-Language": "es" } });
+        const data = await res.json();
+        const results = data.map(r => ({
+          name: r.display_name.split(",").slice(0,3).join(","),
+          full: r.display_name,
+          lat: parseFloat(r.lat), lng: parseFloat(r.lon)
+        }));
+        setSearch(s => ({ ...s, results, loading:false }));
+      } catch(e) { setSearch(s => ({ ...s, results:[], loading:false })); }
+    }, 500);
+  };
+
+  const pickAddress = (r, which) => {
+    if (which === "start") {
+      setForm(f => ({ ...f, startLat:r.lat, startLng:r.lng, startLoc:r.name }));
+      setSearchStart({ q:r.name, results:[], loading:false });
+    } else {
+      setForm(f => ({ ...f, endLat:r.lat, endLng:r.lng, endLoc:r.name }));
+      setSearchEnd({ q:r.name, results:[], loading:false });
+    }
+  };
 
   // Move event to another day
   const moveToDay = (evId, targetDay) => {
@@ -546,30 +598,6 @@ function CalendarTab({ gps }) {
     const [sh,sm] = s.split(":").map(Number);
     const [eh,em] = e.split(":").map(Number);
     return (eh*60+em) - (sh*60+sm);
-  };
-
-  // Geocode address using Nominatim (OpenStreetMap) - free, no API key
-  const geocode = async () => {
-    const addr = (form.addr || "").trim();
-    if (!addr) return;
-    setForm(f => ({...f, searching:true, geoError:null, geoResult:null}));
-    try {
-      const q = addr.toLowerCase().includes("new york") || addr.toLowerCase().includes("nyc") || addr.toLowerCase().includes("jersey")
-        ? addr : `${addr}, New York, NY`;
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1&addressdetails=1`, {
-        headers: { "Accept-Language": "es" }
-      });
-      const data = await res.json();
-      if (data.length > 0) {
-        const r = data[0];
-        const name = r.display_name.split(",").slice(0,3).join(",");
-        setForm(f => ({...f, lat:parseFloat(r.lat), lng:parseFloat(r.lon), loc:`📍 ${name}`, geoResult:name, geoError:null, searching:false}));
-      } else {
-        setForm(f => ({...f, geoError:"No encontrado. Prueba otra dirección.", geoResult:null, searching:false}));
-      }
-    } catch(e) {
-      setForm(f => ({...f, geoError:"Error de conexión", geoResult:null, searching:false}));
-    }
   };
 
   // Swap time slots between two events (for reordering)
@@ -686,23 +714,25 @@ function CalendarTab({ gps }) {
         const isMoving = moving === ev.id;
         const canUp = evIdx > 0 && !ev.f && !dayEvt[evIdx-1].f;
         const canDown = evIdx < dayEvt.length - 1 && !ev.f && !dayEvt[evIdx+1].f;
-        // Distance from previous event (or from Airbnb if first)
+        // This event's start point (fallback to old single loc field)
+        const evStart = ev.startLat ? { lat:ev.startLat, lng:ev.startLng } : (ev.lat ? { lat:ev.lat, lng:ev.lng } : null);
+        const evStartLoc = ev.startLoc || ev.loc || "";
+        const evEnd = ev.endLat ? { lat:ev.endLat, lng:ev.endLng } : evStart;
+        // Previous event's END point (where you were left off)
         const prevEv = evIdx > 0 ? dayEvt[evIdx - 1] : null;
-        const fromPt = prevEv && prevEv.lat ? { lat:prevEv.lat, lng:prevEv.lng } : HOME;
-        const fromLabel = prevEv && prevEv.lat ? "↑ anterior" : "🏠 Airbnb";
-        const dist = ev.lat ? distInfo(ev.lat, ev.lng, fromPt) : null;
-        // Google Maps walking directions URL
-        const mapsUrl = ev.lat ? (prevEv && prevEv.lat
-          ? `https://www.google.com/maps/dir/${prevEv.lat},${prevEv.lng}/${ev.lat},${ev.lng}/@${ev.lat},${ev.lng},14z/data=!3m1!4b1!4m2!4m1!3e2`
-          : `https://www.google.com/maps/dir/${HOME.lat},${HOME.lng}/${ev.lat},${ev.lng}/@${ev.lat},${ev.lng},14z/data=!3m1!4b1!4m2!4m1!3e2`
-        ) : null;
+        const prevEnd = prevEv ? (prevEv.endLat ? { lat:prevEv.endLat, lng:prevEv.endLng } : (prevEv.startLat ? { lat:prevEv.startLat, lng:prevEv.startLng } : (prevEv.lat ? { lat:prevEv.lat, lng:prevEv.lng } : null))) : null;
+        const fromPt = prevEnd || HOME;
+        const fromLabel = prevEnd ? "↑ fin anterior" : "🏠 Airbnb";
+        // Distance from previous end → this start
+        const dist = evStart ? distInfo(evStart.lat, evStart.lng, fromPt) : null;
+        const mapsUrl = evStart ? `https://www.google.com/maps/dir/${fromPt.lat},${fromPt.lng}/${evStart.lat},${evStart.lng}/@${evStart.lat},${evStart.lng},14z/data=!3m1!4b1!4m2!4m1!3e2` : null;
         return (
           <div key={ev.id} style={{ marginBottom:6 }}>
             {/* Distance connector from previous */}
             {dist && evIdx > 0 && (
               <div style={{ marginLeft:54, display:"flex", alignItems:"center", gap:6, padding:"3px 8px", marginBottom:2 }}>
                 <div style={{ width:1, height:12, background:`${C.muted}30` }} />
-                <span style={{ fontSize:9, color:C.blue }}>🚶 {dist.km}km · {dist.walkMin}min andando</span>
+                <span style={{ fontSize:10, color:C.blue }}>🚶 {dist.km}km · {dist.walkMin}min</span>
                 <span style={{ fontSize:9, color:C.muted }}>desde {fromLabel}</span>
               </div>
             )}
@@ -716,8 +746,8 @@ function CalendarTab({ gps }) {
               </div>
               <div onClick={() => !isMoving && startEdit(ev)} style={{ flex:1, borderLeft:`3px solid ${ev.c||C.accent}`, borderRadius:"0 8px 8px 0", padding:"8px 10px", background:`${ev.c||C.accent}0a`, border:`1px solid ${ev.c||C.accent}18`, position:"relative", cursor:ev.f?"default":"pointer" }}>
                 <div style={{ fontSize:15, fontWeight:600, paddingRight:ev.f?18:50 }}>{ev.t}</div>
-                {/* Location name */}
-                {ev.loc && <div style={{ fontSize:9, color:C.muted, marginTop:2 }}>{ev.loc}</div>}
+                {/* Location names: start and end */}
+                {evStartLoc && <div style={{ fontSize:10, color:C.muted, marginTop:2 }}>📍 {evStartLoc}{ev.endLoc && ev.endLoc !== evStartLoc ? ` → 🏁 ${ev.endLoc}` : ""}</div>}
                 {hasOverlap && <span style={{ fontSize:9, color:C.red }}>⚠️ Solapamiento</span>}
                 {/* Distance + Maps link */}
                 {dist && (
@@ -764,7 +794,7 @@ function CalendarTab({ gps }) {
 
       {/* Add event button / form */}
       {!adding ? (
-        <button onClick={() => { setAdding(true); setEditing(null); setMoving(null); setShowPlaces(false); setForm({ t:"", s:"09:00", e:"11:00", c:C.accent, lat:null, lng:null, loc:"" }); }} style={{ width:"100%", padding:12, borderRadius:10, border:`1px dashed ${C.accent}50`, background:"transparent", color:C.accent, fontSize:13, fontWeight:700, cursor:"pointer", marginTop:8 }}>➕ Añadir evento</button>
+        <button onClick={() => { setAdding(true); setEditing(null); setMoving(null); resetForm(); }} style={{ width:"100%", padding:12, borderRadius:10, border:`1px dashed ${C.accent}50`, background:"transparent", color:C.accent, fontSize:13, fontWeight:700, cursor:"pointer", marginTop:8 }}>➕ Añadir evento</button>
       ) : (
         <Card style={{ borderColor:`${C.accent}50`, marginTop:8 }}>
           <div style={{ fontSize:11, fontWeight:700, color:C.accent, marginBottom:6 }}>{editing !== null ? "✏️ Editando evento" : "➕ Nuevo evento"}</div>
@@ -775,59 +805,46 @@ function CalendarTab({ gps }) {
           </div>
           {form.s && form.e && <div style={{ fontSize:10, color:C.muted, marginBottom:6 }}>⏱ Duración: {duration(form.s, form.e)} minutos</div>}
 
-          {/* Location picker */}
-          <div style={{ marginBottom:6 }}>
-            <label style={{ fontSize:10, color:C.muted }}>📍 Ubicación</label>
-
-            {/* Address search */}
-            <div style={{ display:"flex", gap:4, marginBottom:4 }}>
-              <input style={{ ...inputStyle, flex:1, fontSize:11 }} placeholder="Escribe dirección: 230 5th Ave, New York..." value={form.addr||""} onChange={e => setForm({...form, addr:e.target.value})} onKeyDown={e => e.key === "Enter" && geocode()} />
-              <button onClick={geocode} disabled={form.searching} style={{ padding:"8px 12px", borderRadius:8, border:"none", background:form.searching?C.muted:C.accent, color:"#fff", fontWeight:700, fontSize:11, cursor:"pointer", whiteSpace:"nowrap" }}>{form.searching ? "..." : "🔍"}</button>
+          {/* START + END Location pickers */}
+          <div style={{ marginBottom:8 }}>
+            {/* START address */}
+            <label style={{ fontSize:11, color:C.muted, fontWeight:600 }}>📍 Dónde empieza (opcional)</label>
+            <div style={{ position:"relative", marginBottom:6 }}>
+              <input style={{ ...inputStyle, fontSize:13 }} placeholder="Calle, sitio... ej: Times Square, 5th Ave" value={searchStart.q} onChange={e => doSearch(e.target.value, "start")} />
+              {searchStart.loading && <span style={{ position:"absolute", right:10, top:14, fontSize:11, color:C.muted }}>⏳</span>}
+              {form.startLoc && !searchStart.loading && <button onClick={() => { setForm(f=>({...f, startLat:null, startLng:null, startLoc:""})); setSearchStart({q:"",results:[],loading:false}); }} style={{ position:"absolute", right:8, top:10, background:"none", border:"none", color:C.red, fontSize:12, cursor:"pointer", opacity:0.6 }}>✕</button>}
+              {searchStart.results.length > 0 && (
+                <div style={{ position:"absolute", zIndex:10, left:0, right:0, maxHeight:160, overflowY:"auto", background:C.card, border:`1px solid ${C.accent}40`, borderRadius:8, marginTop:2, boxShadow:"0 4px 12px rgba(0,0,0,0.4)" }}>
+                  {searchStart.results.map((r,i) => (
+                    <button key={i} onClick={() => pickAddress(r, "start")} style={{ display:"block", width:"100%", padding:"8px 10px", border:"none", borderBottom:`1px solid ${C.border}30`, background:"transparent", color:C.text, fontSize:12, textAlign:"left", cursor:"pointer" }}>📍 {r.name}</button>
+                  ))}
+                </div>
+              )}
             </div>
+            {form.startLoc && <div style={{ fontSize:10, color:C.green, marginBottom:6 }}>✓ Inicio: {form.startLoc}</div>}
 
-            {/* Geocode result */}
-            {form.geoResult && (
-              <div style={{ fontSize:10, padding:"5px 8px", background:`${C.green}12`, borderRadius:6, marginBottom:4, color:C.green }}>
-                ✓ {form.geoResult}
-              </div>
-            )}
-            {form.geoError && (
-              <div style={{ fontSize:10, padding:"5px 8px", background:`${C.red}12`, borderRadius:6, marginBottom:4, color:C.red }}>
-                ✗ {form.geoError}
-              </div>
-            )}
+            {/* END address */}
+            <label style={{ fontSize:11, color:C.muted, fontWeight:600 }}>🏁 Dónde acaba (opcional, si es distinto)</label>
+            <div style={{ position:"relative", marginBottom:6 }}>
+              <input style={{ ...inputStyle, fontSize:13 }} placeholder="Déjalo vacío si acaba donde empieza" value={searchEnd.q} onChange={e => doSearch(e.target.value, "end")} />
+              {searchEnd.loading && <span style={{ position:"absolute", right:10, top:14, fontSize:11, color:C.muted }}>⏳</span>}
+              {form.endLoc && !searchEnd.loading && <button onClick={() => { setForm(f=>({...f, endLat:null, endLng:null, endLoc:""})); setSearchEnd({q:"",results:[],loading:false}); }} style={{ position:"absolute", right:8, top:10, background:"none", border:"none", color:C.red, fontSize:12, cursor:"pointer", opacity:0.6 }}>✕</button>}
+              {searchEnd.results.length > 0 && (
+                <div style={{ position:"absolute", zIndex:10, left:0, right:0, maxHeight:160, overflowY:"auto", background:C.card, border:`1px solid ${C.accent}40`, borderRadius:8, marginTop:2, boxShadow:"0 4px 12px rgba(0,0,0,0.4)" }}>
+                  {searchEnd.results.map((r,i) => (
+                    <button key={i} onClick={() => pickAddress(r, "end")} style={{ display:"block", width:"100%", padding:"8px 10px", border:"none", borderBottom:`1px solid ${C.border}30`, background:"transparent", color:C.text, fontSize:12, textAlign:"left", cursor:"pointer" }}>🏁 {r.name}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {form.endLoc && <div style={{ fontSize:10, color:C.green, marginBottom:4 }}>✓ Fin: {form.endLoc}</div>}
 
-            {/* Current location display */}
-            {form.loc && (
-              <div style={{ fontSize:10, color:C.accent, marginBottom:4, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                <span>📍 {form.loc}</span>
-                <button onClick={() => setForm({...form, lat:null, lng:null, loc:"", addr:"", geoResult:null, geoError:null})} style={{ background:"none", border:"none", color:C.red, fontSize:10, cursor:"pointer", opacity:0.6 }}>✕ quitar</button>
-              </div>
-            )}
-
-            {/* Quick places toggle */}
-            <button onClick={() => setShowPlaces(!showPlaces)} style={{
-              width:"100%", padding:"5px 8px", borderRadius:6, border:`1px solid ${C.border}40`,
-              background:"transparent", color:C.muted, fontSize:10, cursor:"pointer", textAlign:"left"
-            }}>
-              {showPlaces ? "▲ Cerrar sitios rápidos" : "⚡ O elige un sitio conocido de NY..."}
-            </button>
-            {showPlaces && (
-              <div style={{ maxHeight:160, overflowY:"auto", background:C.card, border:`1px solid ${C.border}`, borderRadius:6, marginTop:2 }}>
-                {NYC_PLACES.filter(p => p.lat !== 0).map((p,i) => (
-                  <button key={i} onClick={() => {
-                    if (!p.lat) { setForm({...form, lat:null, lng:null, loc:"", geoResult:null, geoError:null}); }
-                    else { setForm({...form, lat:p.lat, lng:p.lng, loc:p.n, geoResult:null, geoError:null}); }
-                    setShowPlaces(false);
-                  }} style={{
-                    display:"block", width:"100%", padding:"5px 10px", border:"none", borderBottom:`1px solid ${C.border}20`,
-                    background: form.loc === p.n ? `${C.accent}15` : "transparent",
-                    color: form.loc === p.n ? C.accent : C.text,
-                    fontSize:11, textAlign:"left", cursor:"pointer"
-                  }}>{p.n}</button>
-                ))}
-              </div>
-            )}
+            {/* Quick places shortcuts */}
+            <div style={{ display:"flex", gap:3, flexWrap:"wrap", marginTop:2 }}>
+              {NYC_PLACES.filter(p => p.lat && p.lat !== 0).slice(0,8).map((p,i) => (
+                <button key={i} onClick={() => { setForm(f=>({...f, startLat:p.lat, startLng:p.lng, startLoc:p.n})); setSearchStart({q:p.n, results:[], loading:false}); }} style={{ padding:"3px 7px", borderRadius:10, border:`1px solid ${C.border}`, background:"transparent", color:C.muted, fontSize:9, cursor:"pointer" }}>{p.n}</button>
+              ))}
+            </div>
           </div>
 
           <div style={{ display:"flex", gap:4, marginBottom:8 }}>
