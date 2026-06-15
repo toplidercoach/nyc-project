@@ -29,6 +29,20 @@ const DB = {
       });
       return r.ok;
     } catch (e) { console.error("DB.set:", e); return false; }
+  },
+  // Upload a file to Storage bucket "tickets", returns public URL
+  async uploadFile(file) {
+    try {
+      const ext = (file.name || "file").split(".").pop();
+      const path = `${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+      const r = await fetch(`${SB_URL}/storage/v1/object/tickets/${path}`, {
+        method: "POST",
+        headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": file.type || "application/octet-stream" },
+        body: file
+      });
+      if (!r.ok) throw new Error(await r.text());
+      return `${SB_URL}/storage/v1/object/public/tickets/${path}`;
+    } catch (e) { console.error("uploadFile:", e); return null; }
   }
 };
 
@@ -411,7 +425,7 @@ function CalendarTab({ gps }) {
   const [day, setDay] = useState(0);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ t:"", s:"09:00", e:"11:00", c:C.accent, startLat:null, startLng:null, startLoc:"", endLat:null, endLng:null, endLoc:"" });
+  const [form, setForm] = useState({ t:"", s:"09:00", e:"11:00", c:C.accent, startLat:null, startLng:null, startLoc:"", endLat:null, endLng:null, endLoc:"", attachments:[] });
   const [moving, setMoving] = useState(null);
   const [showIdeas, setShowIdeas] = useState(false);
   const [ideaText, setIdeaText] = useState("");
@@ -420,6 +434,10 @@ function CalendarTab({ gps }) {
   // Address search dropdown state
   const [searchStart, setSearchStart] = useState({ q:"", results:[], loading:false });
   const [searchEnd, setSearchEnd] = useState({ q:"", results:[], loading:false });
+  const [uploading, setUploading] = useState(false);
+  const [linkInput, setLinkInput] = useState("");
+  const [viewTickets, setViewTickets] = useState(null); // event id whose tickets are shown
+  const ticketFileRef = useRef(null);
   const saveTimer = useRef(null);
   const pollTimer = useRef(null);
   const lastRemoteTs = useRef(null);
@@ -500,7 +518,8 @@ function CalendarTab({ gps }) {
     const data = {
       t:form.t, s:form.s, e:form.e, c:form.c,
       startLat:form.startLat, startLng:form.startLng, startLoc:form.startLoc,
-      endLat:form.endLat, endLng:form.endLng, endLoc:form.endLoc
+      endLat:form.endLat, endLng:form.endLng, endLoc:form.endLoc,
+      attachments: form.attachments || []
     };
     if (editing !== null) {
       setEvents(events.map(ev => ev.id === editing ? { ...ev, ...data } : ev));
@@ -513,9 +532,10 @@ function CalendarTab({ gps }) {
   };
 
   const resetForm = () => {
-    setForm({ t:"", s:"09:00", e:"11:00", c:C.accent, startLat:null, startLng:null, startLoc:"", endLat:null, endLng:null, endLoc:"" });
+    setForm({ t:"", s:"09:00", e:"11:00", c:C.accent, startLat:null, startLng:null, startLoc:"", endLat:null, endLng:null, endLoc:"", attachments:[] });
     setSearchStart({ q:"", results:[], loading:false });
     setSearchEnd({ q:"", results:[], loading:false });
+    setLinkInput("");
   };
 
   const startEdit = (ev) => {
@@ -524,15 +544,39 @@ function CalendarTab({ gps }) {
     setForm({
       t:ev.t, s:ev.s, e:ev.e, c:ev.c||C.accent,
       startLat:ev.startLat||ev.lat||null, startLng:ev.startLng||ev.lng||null, startLoc:ev.startLoc||ev.loc||"",
-      endLat:ev.endLat||null, endLng:ev.endLng||null, endLoc:ev.endLoc||""
+      endLat:ev.endLat||null, endLng:ev.endLng||null, endLoc:ev.endLoc||"",
+      attachments: ev.attachments || []
     });
     setSearchStart({ q:ev.startLoc||ev.loc||"", results:[], loading:false });
     setSearchEnd({ q:ev.endLoc||"", results:[], loading:false });
+    setLinkInput("");
     setEditing(ev.id);
     setAdding(true);
   };
 
   const cancel = () => { setAdding(false); setEditing(null); resetForm(); };
+
+  // Upload a ticket file
+  const uploadTicket = async (file) => {
+    setUploading(true);
+    const url = await DB.uploadFile(file);
+    if (url) {
+      const isImg = (file.type||"").startsWith("image/");
+      setForm(f => ({ ...f, attachments:[...(f.attachments||[]), { name:file.name||"Adjunto", url, type:isImg?"image":"pdf" }] }));
+    }
+    setUploading(false);
+  };
+
+  // Add a link attachment
+  const addLink = () => {
+    const u = linkInput.trim();
+    if (!u) return;
+    const url = u.startsWith("http") ? u : `https://${u}`;
+    setForm(f => ({ ...f, attachments:[...(f.attachments||[]), { name:"🔗 Enlace", url, type:"link" }] }));
+    setLinkInput("");
+  };
+
+  const removeAttachment = (idx) => setForm(f => ({ ...f, attachments:f.attachments.filter((_,i)=>i!==idx) }));
 
   // Address search with dropdown (Nominatim, biased to NYC area)
   const doSearch = (query, which) => {
@@ -768,6 +812,25 @@ function CalendarTab({ gps }) {
                   </div>
                 )}
                 {ev.f && <span style={{ position:"absolute", top:6, right:6, fontSize:8, color:C.muted }}>🔒</span>}
+                {/* Tickets/attachments button */}
+                {ev.attachments && ev.attachments.length > 0 && (
+                  <button onClick={(e) => { e.stopPropagation(); setViewTickets(viewTickets === ev.id ? null : ev.id); }} style={{
+                    marginTop:6, padding:"4px 10px", borderRadius:6, border:`1px solid ${C.purple}50`, background:`${C.purple}15`,
+                    color:C.purple, fontSize:11, fontWeight:700, cursor:"pointer"
+                  }}>🎟️ Entradas/Docs ({ev.attachments.length}) {viewTickets === ev.id ? "▲" : "▼"}</button>
+                )}
+                {/* Attachments panel */}
+                {viewTickets === ev.id && ev.attachments && (
+                  <div style={{ marginTop:6, display:"flex", flexDirection:"column", gap:4 }} onClick={e => e.stopPropagation()}>
+                    {ev.attachments.map((a,i) => (
+                      <a key={i} href={a.url} target="_blank" rel="noopener" style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 8px", background:C.card, borderRadius:6, border:`1px solid ${C.border}`, textDecoration:"none", color:C.text }}>
+                        {a.type === "image" ? <img src={a.url} alt="" style={{ width:36, height:36, borderRadius:4, objectFit:"cover" }} /> : <span style={{ fontSize:20 }}>{a.type === "pdf" ? "📄" : "🔗"}</span>}
+                        <span style={{ fontSize:12, flex:1 }}>{a.name}</span>
+                        <span style={{ fontSize:10, color:C.purple }}>Abrir ↗</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             {/* Move-to-day picker */}
@@ -844,6 +907,32 @@ function CalendarTab({ gps }) {
               {NYC_PLACES.filter(p => p.lat && p.lat !== 0).slice(0,8).map((p,i) => (
                 <button key={i} onClick={() => { setForm(f=>({...f, startLat:p.lat, startLng:p.lng, startLoc:p.n})); setSearchStart({q:p.n, results:[], loading:false}); }} style={{ padding:"3px 7px", borderRadius:10, border:`1px solid ${C.border}`, background:"transparent", color:C.muted, fontSize:9, cursor:"pointer" }}>{p.n}</button>
               ))}
+            </div>
+          </div>
+
+          {/* Attachments / tickets */}
+          <div style={{ marginBottom:8 }}>
+            <label style={{ fontSize:11, color:C.muted, fontWeight:600 }}>🎟️ Entradas, bonos, documentos (opcional)</label>
+            {/* Existing attachments */}
+            {form.attachments && form.attachments.length > 0 && (
+              <div style={{ display:"flex", flexDirection:"column", gap:4, marginTop:4, marginBottom:6 }}>
+                {form.attachments.map((a,i) => (
+                  <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 8px", background:C.card, borderRadius:6, border:`1px solid ${C.border}` }}>
+                    {a.type === "image" ? <img src={a.url} alt="" style={{ width:30, height:30, borderRadius:4, objectFit:"cover" }} /> : <span style={{ fontSize:18 }}>{a.type === "pdf" ? "📄" : "🔗"}</span>}
+                    <a href={a.url} target="_blank" rel="noopener" style={{ fontSize:12, flex:1, color:C.purple, textDecoration:"none" }}>{a.name}</a>
+                    <button onClick={() => removeAttachment(i)} style={{ background:"none", border:"none", color:C.red, fontSize:12, cursor:"pointer", opacity:0.5 }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Upload + link */}
+            <div style={{ display:"flex", gap:6, marginTop:4 }}>
+              <button onClick={() => ticketFileRef.current?.click()} disabled={uploading} style={{ flex:1, padding:"9px", borderRadius:8, border:`1px solid ${C.purple}40`, background:`${C.purple}12`, color:C.purple, fontSize:12, fontWeight:700, cursor:"pointer" }}>{uploading ? "⏳ Subiendo..." : "📎 Subir foto/PDF"}</button>
+              <input ref={ticketFileRef} type="file" accept="image/*,application/pdf" style={{ display:"none" }} onChange={e => { if (e.target.files?.[0]) uploadTicket(e.target.files[0]); e.target.value=""; }} />
+            </div>
+            <div style={{ display:"flex", gap:6, marginTop:6 }}>
+              <input style={{ ...inputStyle, flex:1, fontSize:12 }} placeholder="O pega un link (OneDrive, Drive...)" value={linkInput} onChange={e => setLinkInput(e.target.value)} onKeyDown={e => e.key === "Enter" && addLink()} />
+              <button onClick={addLink} style={{ padding:"9px 14px", borderRadius:8, border:"none", background:C.purple, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer" }}>+</button>
             </div>
           </div>
 
