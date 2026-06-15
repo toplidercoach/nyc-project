@@ -373,6 +373,21 @@ function HomeTab() {
   );
 }
 
+// PATH train stations (Jersey City + Manhattan) - key for this trip
+const PATH_STATIONS = [
+  { n:"🚆 JSQ (Journal Square)", lat:40.7325, lng:-74.0633, nj:true },
+  { n:"🚆 Grove Street", lat:40.7196, lng:-74.0428, nj:true },
+  { n:"🚆 Exchange Place", lat:40.7163, lng:-74.0329, nj:true },
+  { n:"🚆 Newport", lat:40.7267, lng:-74.0339, nj:true },
+  { n:"🚆 Hoboken", lat:40.7349, lng:-74.0291, nj:true },
+  { n:"🚇 WTC (World Trade Center)", lat:40.7115, lng:-74.0114, nj:false },
+  { n:"🚇 Christopher St", lat:40.7336, lng:-74.0068, nj:false },
+  { n:"🚇 9th St", lat:40.7341, lng:-73.9997, nj:false },
+  { n:"🚇 14th St", lat:40.7376, lng:-73.9966, nj:false },
+  { n:"🚇 23rd St", lat:40.7429, lng:-73.9925, nj:false },
+  { n:"🚇 33rd St (Herald Sq)", lat:40.7491, lng:-73.9882, nj:false },
+];
+
 // Quick location picker for events
 const NYC_PLACES = [
   { n:"📍 Sin ubicación", lat:null, lng:null },
@@ -902,8 +917,31 @@ function CalendarTab({ gps }) {
             </div>
             {form.endLoc && <div style={{ fontSize:10, color:C.green, marginBottom:4 }}>✓ Fin: {form.endLoc}</div>}
 
+            {/* PATH stations quick buttons */}
+            <div style={{ marginTop:6, padding:"6px 8px", background:`${C.blue}08`, borderRadius:8, border:`1px solid ${C.blue}20` }}>
+              <div style={{ fontSize:10, color:C.blue, fontWeight:700, marginBottom:4 }}>🚆 Estaciones PATH (toca para poner como inicio · mantén lógica fin tú)</div>
+              <div style={{ fontSize:9, color:C.muted, marginBottom:3 }}>Nueva Jersey:</div>
+              <div style={{ display:"flex", gap:3, flexWrap:"wrap", marginBottom:5 }}>
+                {PATH_STATIONS.filter(p => p.nj).map((p,i) => (
+                  <div key={i} style={{ display:"flex", border:`1px solid ${C.blue}30`, borderRadius:8, overflow:"hidden" }}>
+                    <button onClick={() => { setForm(f=>({...f, startLat:p.lat, startLng:p.lng, startLoc:p.n})); setSearchStart({q:p.n, results:[], loading:false}); }} style={{ padding:"3px 6px", border:"none", background:"transparent", color:C.blue, fontSize:9, cursor:"pointer" }}>{p.n}</button>
+                    <button onClick={() => { setForm(f=>({...f, endLat:p.lat, endLng:p.lng, endLoc:p.n})); setSearchEnd({q:p.n, results:[], loading:false}); }} title="Poner como fin" style={{ padding:"3px 5px", border:"none", borderLeft:`1px solid ${C.blue}30`, background:`${C.blue}10`, color:C.blue, fontSize:9, cursor:"pointer", fontWeight:700 }}>🏁</button>
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize:9, color:C.muted, marginBottom:3 }}>Manhattan:</div>
+              <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
+                {PATH_STATIONS.filter(p => !p.nj).map((p,i) => (
+                  <div key={i} style={{ display:"flex", border:`1px solid ${C.purple}30`, borderRadius:8, overflow:"hidden" }}>
+                    <button onClick={() => { setForm(f=>({...f, startLat:p.lat, startLng:p.lng, startLoc:p.n})); setSearchStart({q:p.n, results:[], loading:false}); }} style={{ padding:"3px 6px", border:"none", background:"transparent", color:C.purple, fontSize:9, cursor:"pointer" }}>{p.n}</button>
+                    <button onClick={() => { setForm(f=>({...f, endLat:p.lat, endLng:p.lng, endLoc:p.n})); setSearchEnd({q:p.n, results:[], loading:false}); }} title="Poner como fin" style={{ padding:"3px 5px", border:"none", borderLeft:`1px solid ${C.purple}30`, background:`${C.purple}10`, color:C.purple, fontSize:9, cursor:"pointer", fontWeight:700 }}>🏁</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* Quick places shortcuts */}
-            <div style={{ display:"flex", gap:3, flexWrap:"wrap", marginTop:2 }}>
+            <div style={{ display:"flex", gap:3, flexWrap:"wrap", marginTop:6 }}>
               {NYC_PLACES.filter(p => p.lat && p.lat !== 0).slice(0,8).map((p,i) => (
                 <button key={i} onClick={() => { setForm(f=>({...f, startLat:p.lat, startLng:p.lng, startLoc:p.n})); setSearchStart({q:p.n, results:[], loading:false}); }} style={{ padding:"3px 7px", borderRadius:10, border:`1px solid ${C.border}`, background:"transparent", color:C.muted, fontSize:9, cursor:"pointer" }}>{p.n}</button>
               ))}
