@@ -7,8 +7,8 @@ const SB_URL = "https://txowjhiaftcqmdewwqpv.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4b3dqaGlhZnRjcW1kZXd3cXB2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MjE5MjgsImV4cCI6MjA5NjQ5NzkyOH0.9uOPxBFhIPqZb1aQ1kz4hOtwjLzVqbHT-ghrw3wk1Gc";
 const SB_HEADERS = { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": "application/json" };
 
-// Claude API key (shared, with spending limit set in console)
-const CLAUDE_KEY = "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";
+// Claude API key — read from Vercel environment variable (VITE_CLAUDE_KEY)
+const CLAUDE_KEY = import.meta.env.VITE_CLAUDE_KEY || "";
 
 const DB = {
   async get(key) {
