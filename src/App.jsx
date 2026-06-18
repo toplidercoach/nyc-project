@@ -7,6 +7,9 @@ const SB_URL = "https://txowjhiaftcqmdewwqpv.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4b3dqaGlhZnRjcW1kZXd3cXB2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MjE5MjgsImV4cCI6MjA5NjQ5NzkyOH0.9uOPxBFhIPqZb1aQ1kz4hOtwjLzVqbHT-ghrw3wk1Gc";
 const SB_HEADERS = { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": "application/json" };
 
+// Claude API key (shared, with spending limit set in console)
+const CLAUDE_KEY = "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";
+
 const DB = {
   async get(key) {
     try {
@@ -1201,28 +1204,25 @@ function AITab() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState("chat");
-  const [apiKey, setApiKey] = useState(() => S.get("apikey") || "");
-  const [showKey, setShowKey] = useState(false);
   const ref = useRef(null);
-  const hasKey = apiKey && apiKey.length > 10;
 
   useEffect(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; }, [msgs, loading]);
 
   const send = async (text) => {
-    if (!text.trim() || !hasKey) return;
+    if (!text.trim()) return;
     const content = mode === "translate" ? `Traduce al inglés para usar en NY. Solo traducción + pronunciación. Frase: "${text}"` : text;
     const newMsgs = [...msgs, { role:"user", content }];
     setMsgs(newMsgs); setInput(""); setLoading(true);
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST", headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+        method:"POST", headers:{"Content-Type":"application/json","x-api-key":CLAUDE_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
         body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:1000, system:AI_SYS, messages:newMsgs.map(m=>({role:m.role,content:m.content})) }),
       });
       const r = await res.json();
-      if (r.error) { setMsgs([...newMsgs, { role:"assistant", content:`⚠️ Error API: ${r.error.message || "Revisa tu API Key"}` }]); setLoading(false); return; }
+      if (r.error) { setMsgs([...newMsgs, { role:"assistant", content:`⚠️ Error: ${r.error.message || "Inténtalo de nuevo"}` }]); setLoading(false); return; }
       const reply = r.content?.filter(b=>b.type==="text").map(b=>b.text).join("\n") || "No pude responder.";
       setMsgs([...newMsgs, { role:"assistant", content:reply }]);
-    } catch(err) { setMsgs([...newMsgs, { role:"assistant", content:"⚠️ Error de conexión. Revisa tu API Key en la parte superior o tu conexión a internet." }]); }
+    } catch(err) { setMsgs([...newMsgs, { role:"assistant", content:"⚠️ Error de conexión. Revisa tu internet e inténtalo de nuevo." }]); }
     setLoading(false);
   };
 
@@ -1232,54 +1232,28 @@ function AITab() {
     <div style={{ display:"flex", flexDirection:"column", height:"calc(100vh - 110px)" }}>
       <div style={{ display:"flex", gap:4, padding:"10px 14px 6px", background:C.bg2 }}>
         {[["chat","🤖 Guía"],["translate","🌐 Traductor"]].map(([m,l]) => (
-          <button key={m} onClick={() => setMode(m)} style={{ flex:1, padding:"7px", borderRadius:8, border:`1px solid ${mode===m?C.accent:C.border}`, background:mode===m?`${C.accent}18`:"transparent", color:mode===m?C.accent:C.muted, fontSize:11, fontWeight:700, cursor:"pointer" }}>{l}</button>
+          <button key={m} onClick={() => setMode(m)} style={{ flex:1, padding:"9px", borderRadius:8, border:`1px solid ${mode===m?C.accent:C.border}`, background:mode===m?`${C.accent}18`:"transparent", color:mode===m?C.accent:C.muted, fontSize:13, fontWeight:700, cursor:"pointer" }}>{l}</button>
         ))}
-      </div>
-      <div style={{ padding:"8px 14px", background:C.bg2 }}>
-        {!hasKey ? (
-          <>
-            <div style={{ padding:"12px 14px", background:`${C.gold}12`, borderRadius:10, border:`1px solid ${C.gold}30`, marginBottom:8 }}>
-              <div style={{ fontSize:12, fontWeight:700, color:C.gold, marginBottom:4 }}>🔑 API Key necesaria</div>
-              <div style={{ fontSize:11, color:C.muted, lineHeight:1.5 }}>
-                Para usar la Guía IA necesitas una API Key de Anthropic.<br/>
-                1. Ve a <b style={{color:C.text}}>console.anthropic.com</b><br/>
-                2. Crea cuenta o inicia sesión<br/>
-                3. Ve a <b style={{color:C.text}}>API Keys</b> → Crear nueva<br/>
-                4. Copia la key (empieza por <b style={{color:C.text}}>sk-ant-...</b>)
-              </div>
-            </div>
-            <div style={{ display:"flex", gap:6 }}>
-              <input style={{ ...inputStyle, flex:1, fontSize:13 }} type="password" placeholder="Pega aquí tu sk-ant-..." value={apiKey} onChange={e => setApiKey(e.target.value)} />
-              <button onClick={() => { S.set("apikey", apiKey); }} style={{ padding:"10px 16px", borderRadius:8, border:"none", background:C.accent, color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>Guardar</button>
-            </div>
-            <div style={{ fontSize:9, color:C.muted, marginTop:4 }}>🔒 Se guarda solo en tu navegador. No se envía a ningún otro sitio.</div>
-          </>
-        ) : (
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <span style={{ fontSize:10, color:C.green }}>✅ API Key configurada</span>
-            <button onClick={() => { S.set("apikey",""); setApiKey(""); }} style={{ fontSize:10, color:C.muted, background:"none", border:"none", cursor:"pointer", textDecoration:"underline" }}>Cambiar</button>
-          </div>
-        )}
       </div>
       <div ref={ref} style={{ flex:1, overflow:"auto", padding:"10px 14px", display:"flex", flexDirection:"column", gap:8 }}>
         {msgs.length === 0 && (
           <div style={{ textAlign:"center", padding:"16px 0" }}>
             <div style={{ fontSize:36, marginBottom:6 }}>{mode === "chat" ? "🗽" : "🌐"}</div>
-            <div style={{ fontSize:14, fontWeight:700, marginBottom:12 }}>{mode === "chat" ? "Tu guía de Nueva York" : "Traductor ES→EN"}</div>
+            <div style={{ fontSize:15, fontWeight:700, marginBottom:12 }}>{mode === "chat" ? "Tu guía de Nueva York" : "Traductor ES→EN"}</div>
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-              {quickQ.map((q,i) => <button key={i} onClick={() => send(q)} style={{ padding:"9px 12px", borderRadius:10, border:`1px solid ${C.border}`, background:C.card, color:C.text, fontSize:12, cursor:"pointer", textAlign:"left" }}>{q}</button>)}
+              {quickQ.map((q,i) => <button key={i} onClick={() => send(q)} style={{ padding:"11px 14px", borderRadius:10, border:`1px solid ${C.border}`, background:C.card, color:C.text, fontSize:14, cursor:"pointer", textAlign:"left" }}>{q}</button>)}
             </div>
           </div>
         )}
         {msgs.map((m,i) => (
           <div key={i} style={{ display:"flex", justifyContent:m.role==="user"?"flex-end":"flex-start" }}>
-            <div style={{ maxWidth:"85%", padding:"10px 14px", borderRadius:14, fontSize:13, lineHeight:1.6, whiteSpace:"pre-wrap", ...(m.role==="user" ? {background:C.accent, color:"#fff", borderBottomRightRadius:4} : {background:C.card, border:`1px solid ${C.border}`, borderBottomLeftRadius:4}) }}>{m.content}</div>
+            <div style={{ maxWidth:"85%", padding:"10px 14px", borderRadius:14, fontSize:14, lineHeight:1.6, whiteSpace:"pre-wrap", ...(m.role==="user" ? {background:C.accent, color:"#fff", borderBottomRightRadius:4} : {background:C.card, border:`1px solid ${C.border}`, borderBottomLeftRadius:4}) }}>{m.content}</div>
           </div>
         ))}
-        {loading && <div style={{ fontSize:12, color:C.muted, padding:10 }}>Pensando...</div>}
+        {loading && <div style={{ fontSize:13, color:C.muted, padding:10 }}>Pensando...</div>}
       </div>
       <div style={{ padding:"8px 14px 10px", background:C.bg2, borderTop:`1px solid ${C.border}`, display:"flex", gap:8 }}>
-        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key==="Enter" && send(input)} placeholder={mode==="chat"?"Pregunta...":"Escribe en español..."} style={{ ...inputStyle, flex:1, fontSize:13 }} />
+        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key==="Enter" && send(input)} placeholder={mode==="chat"?"Pregunta lo que quieras...":"Escribe en español..."} style={{ ...inputStyle, flex:1, fontSize:14 }} />
         <button onClick={() => send(input)} disabled={loading||!input.trim()} style={{ padding:"10px 14px", borderRadius:10, border:"none", background:C.accent, color:"#fff", fontWeight:700, cursor:"pointer", opacity:loading||!input.trim()?0.4:1 }}>➤</button>
       </div>
     </div>
