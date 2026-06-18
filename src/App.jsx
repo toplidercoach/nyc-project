@@ -1278,15 +1278,44 @@ function ControlTab() {
   const [sub, setSub] = useState("budget");
   const [rate, setRate] = useState(0.86);
   const [rateTime, setRateTime] = useState(null);
+  const [rateStatus, setRateStatus] = useState("loading"); // loading, live, fallback
 
-  // Fetch live USD→EUR rate
+  // Fetch live USD→EUR rate (tries multiple sources)
   useEffect(() => {
     (async () => {
+      // Source 1: Frankfurter (ECB data)
       try {
-        const r = await fetch("https://api.frankfurter.app/latest?from=USD&to=EUR");
-        const d = await r.json();
-        if (d.rates?.EUR) { setRate(d.rates.EUR); setRateTime(d.date); }
-      } catch(e) { console.error("Rate fetch:", e); }
+        const r = await fetch("https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR");
+        if (r.ok) {
+          const d = await r.json();
+          if (d.rates?.EUR) { setRate(d.rates.EUR); setRateTime(d.date); setRateStatus("live"); return; }
+        }
+      } catch(e) { console.warn("Frankfurter failed:", e); }
+
+      // Source 2: open.er-api.com (free, no key)
+      try {
+        const r = await fetch("https://open.er-api.com/v6/latest/USD");
+        if (r.ok) {
+          const d = await r.json();
+          if (d.rates?.EUR) {
+            setRate(d.rates.EUR);
+            setRateTime(d.time_last_update_utc ? new Date(d.time_last_update_utc).toISOString().slice(0,10) : null);
+            setRateStatus("live"); return;
+          }
+        }
+      } catch(e) { console.warn("er-api failed:", e); }
+
+      // Source 3: exchangerate-api host
+      try {
+        const r = await fetch("https://api.exchangerate.host/latest?base=USD&symbols=EUR");
+        if (r.ok) {
+          const d = await r.json();
+          if (d.rates?.EUR) { setRate(d.rates.EUR); setRateTime(d.date); setRateStatus("live"); return; }
+        }
+      } catch(e) { console.warn("exchangerate.host failed:", e); }
+
+      // All failed → keep fallback
+      setRateStatus("fallback");
     })();
   }, []);
   const [expenses, setExpenses] = useState(() => {
@@ -1411,7 +1440,7 @@ function ControlTab() {
 
           {/* Quick converter */}
           <Card style={{ background:`${C.gold}08`, borderColor:`${C.gold}25` }}>
-            <div style={{ fontSize:13, fontWeight:700, color:C.gold, marginBottom:6 }}>💱 Conversor · 1$ = {rate.toFixed(4)}€ {rateTime && <span style={{ fontSize:10, fontWeight:400, color:C.muted }}>(BCE {rateTime})</span>}</div>
+            <div style={{ fontSize:13, fontWeight:700, color:C.gold, marginBottom:6 }}>💱 Conversor · 1$ = {rate.toFixed(4)}€ {rateStatus === "live" ? <span style={{ fontSize:10, fontWeight:400, color:C.green }}>🟢 en vivo {rateTime && `(${rateTime})`}</span> : rateStatus === "loading" ? <span style={{ fontSize:10, fontWeight:400, color:C.muted }}>⏳ cargando...</span> : <span style={{ fontSize:10, fontWeight:400, color:C.muted }}>⚠️ aprox (sin conexión)</span>}</div>
             <div style={{ display:"flex", gap:8, alignItems:"center" }}>
               <div style={{ flex:1 }}>
                 <label style={{ fontSize:11, color:C.muted }}>$ USD</label>
