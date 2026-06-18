@@ -1216,7 +1216,7 @@ function AITab() {
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method:"POST", headers:{"Content-Type":"application/json","x-api-key":CLAUDE_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-        body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:1000, system:AI_SYS, messages:newMsgs.map(m=>({role:m.role,content:m.content})) }),
+        body: JSON.stringify({ model:"claude-sonnet-4-5", max_tokens:1000, system:AI_SYS, messages:newMsgs.map(m=>({role:m.role,content:m.content})) }),
       });
       const r = await res.json();
       if (r.error) { setMsgs([...newMsgs, { role:"assistant", content:`⚠️ Error: ${r.error.message || "Inténtalo de nuevo"}` }]); setLoading(false); return; }
@@ -1334,9 +1334,9 @@ function ControlTab() {
 
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-api-key": CLAUDE_KEY, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6",
+          model: "claude-sonnet-4-5",
           max_tokens: 500,
           messages: [{
             role: "user",
