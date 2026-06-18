@@ -240,9 +240,24 @@ const EVENTS = [
 function HomeTab() {
   const [weather, setWeather] = useState(null);
   const [now, setNow] = useState(new Date());
+  const [rate, setRate] = useState(0.86);
 
   // Update clock every 30s
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(t); }, []);
+
+  // Fetch live USD→EUR rate (multiple sources)
+  useEffect(() => {
+    (async () => {
+      const sources = [
+        async () => { const r = await fetch("https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR"); const d = await r.json(); return d.rates?.EUR; },
+        async () => { const r = await fetch("https://open.er-api.com/v6/latest/USD"); const d = await r.json(); return d.rates?.EUR; },
+        async () => { const r = await fetch("https://api.exchangerate.host/latest?base=USD&symbols=EUR"); const d = await r.json(); return d.rates?.EUR; },
+      ];
+      for (const src of sources) {
+        try { const v = await src(); if (v) { setRate(v); return; } } catch(e) {}
+      }
+    })();
+  }, []);
 
   // Fetch NYC weather + air quality (free API, no key)
   useEffect(() => {
@@ -332,7 +347,7 @@ function HomeTab() {
 
       {/* Key stats */}
       <div style={{ display:"flex", gap:6, marginBottom:10 }}>
-        {[{v:"11",l:"NOCHES",c:C.gold},{v:"5",l:"VIAJEROS",c:C.green},{v:"1$≈0.86€",l:"CAMBIO",c:C.blue}].map((x,i)=>(
+        {[{v:"11",l:"NOCHES",c:C.gold},{v:"5",l:"VIAJEROS",c:C.green},{v:`1$≈${rate.toFixed(3)}€`,l:"CAMBIO 🟢",c:C.blue}].map((x,i)=>(
           <div key={i} style={{ textAlign:"center", background:`${x.c}10`, borderRadius:10, padding:"8px 6px", border:`1px solid ${x.c}20`, flex:1 }}>
             <div style={{ fontSize:18, fontWeight:800, color:x.c }}>{x.v}</div>
             <div style={{ fontSize:9, color:C.muted, letterSpacing:0.5 }}>{x.l}</div>
