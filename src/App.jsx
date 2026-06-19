@@ -1499,7 +1499,7 @@ function ControlTab() {
   return (
     <div>
       <div style={{ display:"flex", gap:4, padding:"10px 14px 6px", background:C.bg2, alignItems:"center" }}>
-        {[["budget","💰 Gastos"],["check","✅ Check"],["notes","📝 Notas"]].map(([k,l]) => (
+        {[["budget","💰 Gastos"],["notes","📝 Notas"]].map(([k,l]) => (
           <button key={k} onClick={() => setSub(k)} style={{ flex:1, padding:"8px", borderRadius:8, border:`1px solid ${sub===k?C.accent:C.border}`, background:sub===k?`${C.accent}18`:"transparent", color:sub===k?C.accent:C.muted, fontSize:13, fontWeight:700, cursor:"pointer" }}>{l}</button>
         ))}
       </div>
@@ -1615,20 +1615,6 @@ function ControlTab() {
             );
           })}
         </>}
-        {sub === "check" && (
-          <Card>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-              <span style={{ fontSize:15, fontWeight:700 }}>📋 {doneN}/{checklist.length}</span>
-              <div style={{ width:80, height:6, borderRadius:3, background:C.border, overflow:"hidden" }}><div style={{ width:`${(doneN/checklist.length)*100}%`, height:"100%", background:C.green, transition:"width .3s" }} /></div>
-            </div>
-            {checklist.map((item,i) => (
-              <div key={i} onClick={() => { const u=[...checklist]; u[i]={...u[i], d:!u[i].d}; setChecklist(u); }} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", cursor:"pointer", borderBottom:`1px solid ${C.border}` }}>
-                <div style={{ width:20, height:20, borderRadius:5, border:`2px solid ${item.d?C.green:C.border}`, background:item.d?`${C.green}18`:"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontSize:11, color:C.green }}>{item.d && "✓"}</div>
-                <span style={{ fontSize:14, color:item.d?C.muted:C.text, textDecoration:item.d?"line-through":"none" }}>{item.t}</span>
-              </div>
-            ))}
-          </Card>
-        )}
         {sub === "notes" && (
           <Card><textarea style={{ ...inputStyle, minHeight:250, resize:"vertical", lineHeight:1.6 }} placeholder="Notas, ideas, links..." value={notes} onChange={e => setNotes(e.target.value)} /></Card>
         )}
