@@ -1974,12 +1974,190 @@ function WorldCupTab() {
 }
 
 // ═══════════════════════════════════════════
+// 🎮 TRIVIAL NYC
+// ═══════════════════════════════════════════
+const TRIVIA_Q = [
+  { q:"¿Cuántos distritos (boroughs) tiene Nueva York?", o:["3","5","7","10"], a:1, cat:"📍 Básico" },
+  { q:"¿Qué isla alberga la Estatua de la Libertad?", o:["Ellis Island","Liberty Island","Roosevelt Island","Staten Island"], a:1, cat:"🗽 Monumentos" },
+  { q:"¿Qué país regaló la Estatua de la Libertad a EE.UU.?", o:["Reino Unido","España","Francia","Italia"], a:2, cat:"🗽 Monumentos" },
+  { q:"¿Cómo se llama el parque más famoso de Manhattan?", o:["Hyde Park","Central Park","Prospect Park","Bryant Park"], a:1, cat:"🌳 Lugares" },
+  { q:"¿Qué rascacielos fue el más alto del mundo hasta 1970?", o:["Chrysler Building","Empire State","One WTC","Flatiron"], a:1, cat:"🏙️ Edificios" },
+  { q:"¿En qué avenida están las tiendas de lujo más famosas?", o:["Broadway","5ª Avenida","Wall Street","Park Avenue"], a:1, cat:"🛍️ Cultura" },
+  { q:"¿Cómo se llama la estación de tren más grande de NY?", o:["Penn Station","Grand Central","Union Station","Times Sq"], a:1, cat:"🚉 Transporte" },
+  { q:"¿Qué puente une Manhattan con Brooklyn y es el más famoso?", o:["Puente Brooklyn","Puente Manhattan","Williamsburg","Verrazzano"], a:0, cat:"🌉 Lugares" },
+  { q:"¿En qué barrio está el barrio chino (Chinatown)?", o:["Brooklyn","Bronx","Bajo Manhattan","Queens"], a:2, cat:"📍 Barrios" },
+  { q:"¿Qué famoso musical sobre un padre fundador triunfa en Broadway?", o:["Cats","Hamilton","Wicked","Chicago"], a:1, cat:"🎭 Cultura" },
+  { q:"¿Cómo se llama el museo de arte más grande de NY?", o:["MoMA","Guggenheim","MET","Whitney"], a:2, cat:"🎨 Museos" },
+  { q:"¿Qué plaza es famosa por sus pantallas y la fiesta de Nochevieja?", o:["Union Square","Times Square","Herald Square","Madison Sq"], a:1, cat:"🏙️ Lugares" },
+  { q:"¿Qué equipo de béisbol juega en el Bronx?", o:["Mets","Yankees","Dodgers","Red Sox"], a:1, cat:"⚾ Deporte" },
+  { q:"¿En qué calle está la Bolsa de Nueva York?", o:["Broadway","Wall Street","Madison Ave","Canal St"], a:1, cat:"💰 Cultura" },
+  { q:"¿Cómo se llaman los típicos taxis amarillos?", o:["Cabs","Ubers","Trolleys","Carriages"], a:0, cat:"🚕 Curiosidades" },
+  { q:"¿Qué edificio aparece en la peli de King Kong subiendo por él?", o:["Chrysler","Empire State","Woolworth","Flatiron"], a:1, cat:"🎬 Cine" },
+  { q:"¿Qué memorial recuerda los atentados de 2001?", o:["Liberty Memorial","9/11 Memorial","Freedom Park","Ground Hall"], a:1, cat:"🕊️ Historia" },
+  { q:"¿Qué famoso barrio es el centro del teatro en NY?", o:["SoHo","Broadway/Theater District","Tribeca","Harlem"], a:1, cat:"🎭 Barrios" },
+  { q:"¿Cómo se llama el sistema de metro de NY popularmente?", o:["The Tube","The Subway","The Metro","The Underground"], a:1, cat:"🚇 Transporte" },
+  { q:"¿Qué comida rápida es típica de los puestos callejeros de NY?", o:["Tacos","Hot dogs","Sushi","Paella"], a:1, cat:"🌭 Comida" },
+  { q:"¿En qué río está la Estatua de la Libertad?", o:["Río Hudson","Bahía de NY","Río Este","Río Harlem"], a:1, cat:"🗽 Geografía" },
+  { q:"¿Qué famoso edificio triangular hay en la 5ª con Broadway?", o:["Flatiron","Chrysler","Woolworth","Seagram"], a:0, cat:"🏙️ Edificios" },
+  { q:"¿Qué barrio es famoso por la cultura afroamericana y el jazz?", o:["Bronx","Harlem","Queens","SoHo"], a:1, cat:"🎷 Cultura" },
+  { q:"¿Cuál es el apodo de Nueva York?", o:["La Ciudad del Amor","La Gran Manzana","La Ciudad Eterna","La Ciudad Blanca"], a:1, cat:"🍎 Curiosidades" },
+  { q:"¿Qué tienda de juguetes gigante es famosa en la 5ª Avenida?", o:["Toys R Us","FAO Schwarz","Hamleys","Lego Store"], a:1, cat:"🧸 Tiendas" },
+];
+
+function TriviaTab() {
+  const WHO = [
+    { id:"Javi", ini:"J", color:"#4FC3F7" }, { id:"Rosa", ini:"R", color:"#F06292" },
+    { id:"Paz", ini:"P", color:"#AED581" }, { id:"Viti", ini:"V", color:"#FFB74D" },
+    { id:"Miguel", ini:"M", color:"#CE93D8" },
+  ];
+  const [player, setPlayer] = useState(null);
+  const [phase, setPhase] = useState("menu"); // menu, playing, done
+  const [qIdx, setQIdx] = useState(0);
+  const [score, setScore] = useState(0);
+  const [picked, setPicked] = useState(null);
+  const [questions, setQuestions] = useState([]);
+  const [scores, setScores] = useState(() => { const s = S.get("trivia"); return Array.isArray(s) ? s : []; });
+  const scoreTs = useRef(null);
+
+  // Load + poll ranking
+  useEffect(() => {
+    (async () => { const r = await DB.get("trivia_scores"); if (r && Array.isArray(r.data)) { setScores(r.data); S.set("trivia", r.data); scoreTs.current = r.ts; } })();
+    const poll = setInterval(async () => {
+      const r = await DB.get("trivia_scores");
+      if (r && r.ts !== scoreTs.current && Array.isArray(r.data)) { scoreTs.current = r.ts; setScores(r.data); S.set("trivia", r.data); }
+    }, 8000);
+    return () => clearInterval(poll);
+  }, []);
+
+  const start = () => {
+    const shuffled = [...TRIVIA_Q].sort(() => Math.random() - 0.5).slice(0, 10);
+    setQuestions(shuffled); setQIdx(0); setScore(0); setPicked(null); setPhase("playing");
+  };
+
+  const pick = (i) => {
+    if (picked !== null) return;
+    setPicked(i);
+    const correct = i === questions[qIdx].a;
+    if (correct) setScore(s => s + 10);
+    setTimeout(() => {
+      if (qIdx < questions.length - 1) { setQIdx(qIdx + 1); setPicked(null); }
+      else { finishGame(correct ? score + 10 : score); }
+    }, 1200);
+  };
+
+  const finishGame = async (finalScore) => {
+    setPhase("done");
+    // Update ranking: keep best score per player
+    const others = scores.filter(s => s.player !== player);
+    const prev = scores.find(s => s.player === player);
+    const best = Math.max(finalScore, prev?.best || 0);
+    const newScores = [...others, { player, best, last: finalScore, plays: (prev?.plays || 0) + 1 }];
+    setScores(newScores); S.set("trivia", newScores);
+    await DB.set("trivia_scores", newScores);
+    scoreTs.current = new Date().toISOString();
+  };
+
+  const ranking = [...scores].sort((a,b) => b.best - a.best);
+
+  return (
+    <div style={{ padding:"12px 14px" }}>
+      <Title sub="Compite con los otros 4 viajeros">🎮 Trivial Nueva York</Title>
+
+      {phase === "menu" && (
+        <>
+          {/* Ranking */}
+          {ranking.length > 0 && (
+            <Card style={{ background:`${C.gold}08`, borderColor:`${C.gold}25` }}>
+              <div style={{ fontSize:14, fontWeight:800, color:C.gold, marginBottom:8 }}>🏆 Ranking</div>
+              {ranking.map((s,i) => {
+                const w = WHO.find(x => x.id === s.player);
+                const medal = i===0?"🥇":i===1?"🥈":i===2?"🥉":`${i+1}.`;
+                return (
+                  <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 0", borderBottom:i<ranking.length-1?`1px solid ${C.border}`:"none" }}>
+                    <span style={{ fontSize:16, minWidth:24 }}>{medal}</span>
+                    <span style={{ width:24, height:24, borderRadius:"50%", background:w?.color||C.muted, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:800, color:"#000" }}>{w?.ini||"?"}</span>
+                    <span style={{ flex:1, fontSize:14, fontWeight:600 }}>{s.player}</span>
+                    <span style={{ fontSize:11, color:C.muted }}>{s.plays} partidas</span>
+                    <span style={{ fontSize:16, fontWeight:800, color:C.gold }}>{s.best}</span>
+                  </div>
+                );
+              })}
+            </Card>
+          )}
+
+          {/* Player selector */}
+          <Card>
+            <div style={{ fontSize:14, fontWeight:700, marginBottom:8 }}>¿Quién juega?</div>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
+              {WHO.map(w => (
+                <button key={w.id} onClick={() => setPlayer(w.id)} style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 12px", borderRadius:20, border:`2px solid ${player===w.id?w.color:C.border}`, background:player===w.id?`${w.color}20`:"transparent", cursor:"pointer" }}>
+                  <span style={{ width:26, height:26, borderRadius:"50%", background:w.color, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:800, color:"#000" }}>{w.ini}</span>
+                  <span style={{ fontSize:14, fontWeight:600, color:player===w.id?w.color:C.text }}>{w.id}</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={start} disabled={!player} style={{ width:"100%", padding:14, borderRadius:10, border:"none", background:player?C.accent:C.border, color:"#fff", fontSize:15, fontWeight:800, cursor:player?"pointer":"default", opacity:player?1:0.5 }}>
+              {player ? `▶️ Jugar como ${player}` : "Elige jugador"}
+            </button>
+            <div style={{ fontSize:11, color:C.muted, textAlign:"center", marginTop:8 }}>10 preguntas · 10 puntos cada una</div>
+          </Card>
+        </>
+      )}
+
+      {phase === "playing" && questions[qIdx] && (
+        <Card>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+            <span style={{ fontSize:12, color:C.muted }}>Pregunta {qIdx+1}/{questions.length}</span>
+            <span style={{ fontSize:14, fontWeight:800, color:C.accent }}>{score} pts</span>
+          </div>
+          <div style={{ height:6, borderRadius:3, background:C.border, marginBottom:14, overflow:"hidden" }}>
+            <div style={{ width:`${((qIdx)/questions.length)*100}%`, height:"100%", background:C.accent, transition:"width .3s" }} />
+          </div>
+          <div style={{ fontSize:11, color:C.gold, marginBottom:6 }}>{questions[qIdx].cat}</div>
+          <div style={{ fontSize:17, fontWeight:700, marginBottom:16, lineHeight:1.4 }}>{questions[qIdx].q}</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            {questions[qIdx].o.map((opt,i) => {
+              let bg = C.card, border = C.border, col = C.text;
+              if (picked !== null) {
+                if (i === questions[qIdx].a) { bg = `${C.green}20`; border = C.green; col = C.green; }
+                else if (i === picked) { bg = `${C.red}20`; border = C.red; col = C.red; }
+              }
+              return (
+                <button key={i} onClick={() => pick(i)} style={{ padding:"13px 16px", borderRadius:10, border:`2px solid ${border}`, background:bg, color:col, fontSize:15, fontWeight:600, cursor:picked===null?"pointer":"default", textAlign:"left" }}>
+                  {picked !== null && i === questions[qIdx].a && "✅ "}
+                  {picked !== null && i === picked && i !== questions[qIdx].a && "❌ "}
+                  {opt}
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {phase === "done" && (
+        <Card style={{ textAlign:"center", padding:24 }}>
+          <div style={{ fontSize:48, marginBottom:8 }}>{score >= 80 ? "🏆" : score >= 50 ? "👏" : "🗽"}</div>
+          <div style={{ fontSize:20, fontWeight:800, marginBottom:4 }}>{score >= 80 ? "¡Crack de NYC!" : score >= 50 ? "¡Bien hecho!" : "¡A seguir aprendiendo!"}</div>
+          <div style={{ fontSize:36, fontWeight:900, color:C.accent, margin:"8px 0" }}>{score} pts</div>
+          <div style={{ fontSize:13, color:C.muted, marginBottom:16 }}>{score/10} de {questions.length} aciertos · {player}</div>
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={start} style={{ flex:1, padding:12, borderRadius:10, border:"none", background:C.accent, color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>🔄 Otra vez</button>
+            <button onClick={() => setPhase("menu")} style={{ flex:1, padding:12, borderRadius:10, border:`1px solid ${C.border}`, background:"transparent", color:C.text, fontSize:14, fontWeight:700, cursor:"pointer" }}>🏆 Ranking</button>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════
 const TABS = [
   { id:"home", icon:"🏠", label:"Inicio" },
   { id:"cal", icon:"📅", label:"Calendario" },
   { id:"wc", icon:"⚽", label:"Mundial" },
+  { id:"trivia", icon:"🎮", label:"Trivial" },
   { id:"ai", icon:"🤖", label:"Guía IA" },
   { id:"ctrl", icon:"💰", label:"Control" },
 ];
@@ -2014,6 +2192,7 @@ export default function App() {
       {tab === "home" && <HomeTab />}
       {tab === "cal" && <CalendarTab gps={gps.pos} />}
       {tab === "wc" && <WorldCupTab />}
+      {tab === "trivia" && <TriviaTab />}
       {tab === "ai" && <AITab />}
       {tab === "ctrl" && <ControlTab />}
 
