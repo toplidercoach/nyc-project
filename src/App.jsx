@@ -1197,21 +1197,44 @@ function FoodTab({ gps }) {
 // ═══════════════════════════════════════════
 // 🤖 AI TAB
 // ═══════════════════════════════════════════
-const AI_SYS = `Eres "NYC Guide 🗽", asistente de viaje familiar. Viaje NY 20 jun-1 jul 2026. 5 españoles de Astorga: Javi(21), Rosa(54), Paz(70), Viti(39), Miguel(54). Airbnb 65 Corbin Ave, Jersey City. PATH Journal Square. Vuelos Iberia IB0211/0212 JFK T8, código KRLGF. Seguro IMAWAY 250002H5 tel +34 913907318. MUNDIAL 2026 GRUPO H: 15jun España-Cabo Verde Atlanta 12pmET, 21jun España-Arabia Saudí Atlanta 12pmET, 26jun Uruguay-España Guadalajara 8pmET. España NO juega en MetLife ni en NY. Partidos en MetLife (cerca Jersey City): 16jun Francia-Senegal 3pmET, 22jun Noruega-Senegal 8pmET, 30jun Octavos 5pmET, 19jul FINAL. Para ver a España en NY: bares deportivos. Pride NYC 28 jun. Responde en español, conciso. Paz 70 años = accesible. Para traducciones: solo traducción + pronunciación.`;
+const AI_SYS = `Eres "NYC Guide 🗽", el guía de viaje personal y amigo de un grupo de 5 españoles de Astorga (León) que viajan a Nueva York del 20 jun al 1 jul 2026.
+
+TONO: Cercano, cálido, con humor leonés y empático. Eres como un amigo que conoce NY a fondo y se alegra de echarles una mano. Usa expresiones naturales, anímalos, pero sé útil y concreto. Nada de respuestas frías o robóticas.
+
+LOS VIAJEROS (adapta el tono a quién pregunta):
+- Javi (21): joven, con energía. Trátalo cercano, planes con marcha, vida nocturna, sitios modernos, street food. Tutéalo con rollo.
+- Rosa (54): trátala con cariño y cercanía, equilibrada, le gusta disfrutar sin prisas pero sin perderse nada.
+- Paz (70): la mayor del grupo. Respuestas claras, pausadas, accesibles. Ten en cuenta caminatas largas, descansos, baños, sitios para sentarse. Cuídala con cariño especial.
+- Viti (39): práctica, organizada, le gusta optimizar el tiempo y el dinero. Dale planes eficientes.
+- Miguel (54): probablemente el organizador del grupo. Visión de conjunto, logística, que todo encaje para los 5.
+- "Todos/Grupo": planes que funcionen para 5 personas de edades 21-70, con ritmo intermedio y opciones para todos.
+
+DATOS DEL VIAJE:
+Airbnb: 65 Corbin Ave, Jersey City. PATH desde Journal Square (~20 min a Manhattan, $3). Vuelos Iberia IB0211/0212, JFK Terminal 8, código KRLGF. Seguro IMAWAY 250002H5, tel +34 913907318.
+
+MUNDIAL 2026 - GRUPO H (España): 15jun España-Cabo Verde (Atlanta), 21jun España-Arabia Saudí (Atlanta 12pmET), 26jun Uruguay-España (Guadalajara 8pmET). OJO: España NO juega en NY ni en MetLife. Para verlos: bares deportivos de Manhattan.
+MetLife Stadium (cerca de Jersey City): 22jun Noruega-Senegal 8pmET, 27jun Panamá-Inglaterra, 30jun Octavos 5pmET, 19jul FINAL.
+Pride NYC: 28 jun.
+
+REGLAS: Responde en español, conciso pero cálido. Si no sabes algo que cambia (horarios/precios de hoy), dilo y sugiere verificar. Para traducciones: solo traducción + pronunciación figurada.`;
 
 function AITab() {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState("chat");
+  const [who, setWho] = useState(() => S.get("aiwho") || "Grupo");
   const ref = useRef(null);
 
   useEffect(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; }, [msgs, loading]);
+  useEffect(() => { S.set("aiwho", who); }, [who]);
 
   const send = async (text) => {
     if (!text.trim()) return;
-    const content = mode === "translate" ? `Traduce al inglés para usar en NY. Solo traducción + pronunciación. Frase: "${text}"` : text;
-    const newMsgs = [...msgs, { role:"user", content }];
+    const content = mode === "translate"
+      ? `Traduce al inglés para usar en NY. Solo traducción + pronunciación. Frase: "${text}"`
+      : `[Pregunta de: ${who}] ${text}`;
+    const newMsgs = [...msgs, { role:"user", content, display:text }];
     setMsgs(newMsgs); setInput(""); setLoading(true);
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -1226,6 +1249,15 @@ function AITab() {
     setLoading(false);
   };
 
+  const WHO_OPTS = [
+    { id:"Grupo", ini:"👥", color:C.accent },
+    { id:"Javi", ini:"J", color:"#4FC3F7" },
+    { id:"Rosa", ini:"R", color:"#F06292" },
+    { id:"Paz", ini:"P", color:"#AED581" },
+    { id:"Viti", ini:"V", color:"#FFB74D" },
+    { id:"Miguel", ini:"M", color:"#CE93D8" },
+  ];
+
   const quickQ = mode === "chat" ? ["¿Cómo llego al MetLife?","Restaurantes baratos Midtown","Metro para Central Park","Bares para ver a España"] : ["¿Dónde está el baño?","La cuenta, por favor","Somos 5, ¿tienen mesa?","¿Me puede recomendar algo?"];
 
   return (
@@ -1235,6 +1267,19 @@ function AITab() {
           <button key={m} onClick={() => setMode(m)} style={{ flex:1, padding:"9px", borderRadius:8, border:`1px solid ${mode===m?C.accent:C.border}`, background:mode===m?`${C.accent}18`:"transparent", color:mode===m?C.accent:C.muted, fontSize:13, fontWeight:700, cursor:"pointer" }}>{l}</button>
         ))}
       </div>
+      {mode === "chat" && (
+        <div style={{ padding:"6px 14px 8px", background:C.bg2 }}>
+          <div style={{ fontSize:10, color:C.muted, marginBottom:4 }}>¿Quién pregunta? (la guía adapta sus respuestas)</div>
+          <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
+            {WHO_OPTS.map(w => (
+              <button key={w.id} onClick={() => setWho(w.id)} style={{ display:"flex", alignItems:"center", gap:4, padding:"4px 8px", borderRadius:14, border:`1px solid ${who===w.id?w.color:C.border}`, background:who===w.id?`${w.color}20`:"transparent", cursor:"pointer" }}>
+                <span style={{ width:18, height:18, borderRadius:"50%", background:w.color, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:800, color:"#000" }}>{w.ini}</span>
+                <span style={{ fontSize:11, fontWeight:600, color:who===w.id?w.color:C.muted }}>{w.id}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div ref={ref} style={{ flex:1, overflow:"auto", padding:"10px 14px", display:"flex", flexDirection:"column", gap:8 }}>
         {msgs.length === 0 && (
           <div style={{ textAlign:"center", padding:"16px 0" }}>
@@ -1247,7 +1292,7 @@ function AITab() {
         )}
         {msgs.map((m,i) => (
           <div key={i} style={{ display:"flex", justifyContent:m.role==="user"?"flex-end":"flex-start" }}>
-            <div style={{ maxWidth:"85%", padding:"10px 14px", borderRadius:14, fontSize:14, lineHeight:1.6, whiteSpace:"pre-wrap", ...(m.role==="user" ? {background:C.accent, color:"#fff", borderBottomRightRadius:4} : {background:C.card, border:`1px solid ${C.border}`, borderBottomLeftRadius:4}) }}>{m.content}</div>
+            <div style={{ maxWidth:"85%", padding:"10px 14px", borderRadius:14, fontSize:14, lineHeight:1.6, whiteSpace:"pre-wrap", ...(m.role==="user" ? {background:C.accent, color:"#fff", borderBottomRightRadius:4} : {background:C.card, border:`1px solid ${C.border}`, borderBottomLeftRadius:4}) }}>{m.display || m.content}</div>
           </div>
         ))}
         {loading && <div style={{ fontSize:13, color:C.muted, padding:10 }}>Pensando...</div>}
@@ -1374,12 +1419,59 @@ function ControlTab() {
       { t:"Protector solar", d:false }, { t:"Dólares efectivo", d:false },
     ];
   });
-  const [notes, setNotes] = useState(() => S.get("notes") || "");
+  const [notes, setNotes] = useState(() => { const n = S.get("notes"); return typeof n === "string" ? n : ""; });
   const [converter, setConverter] = useState({ usd:"", eur:"" });
+  const [ctrlSync, setCtrlSync] = useState("loading");
+  const ctrlSaveTimer = useRef(null);
+  const ctrlPollTimer = useRef(null);
+  const ctrlTs = useRef({ exp:null, chk:null, notes:null });
+  const ctrlMounted = useRef(false);
 
-  useEffect(() => { S.set("exp", expenses); }, [expenses]);
-  useEffect(() => { S.set("chk", checklist); }, [checklist]);
-  useEffect(() => { S.set("notes", notes); }, [notes]);
+  // Load from Supabase on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const [re, rc, rn] = await Promise.all([DB.get("expenses"), DB.get("checklist"), DB.get("notes")]);
+        if (re && Array.isArray(re.data) && re.data.length > 0) { setExpenses(re.data); ctrlTs.current.exp = re.ts; }
+        else { await DB.set("expenses", expenses); }
+        if (rc && Array.isArray(rc.data) && rc.data.length > 0) { setChecklist(rc.data); ctrlTs.current.chk = rc.ts; }
+        else { await DB.set("checklist", checklist); }
+        if (rn && rn.data) { const txt = Array.isArray(rn.data) ? (rn.data[0]||"") : rn.data; if (typeof txt === "string") setNotes(txt); ctrlTs.current.notes = rn.ts; }
+        setCtrlSync("synced");
+      } catch(e) { setCtrlSync("offline"); }
+    })();
+  }, []);
+
+  // Poll every 7s for changes from other travelers
+  useEffect(() => {
+    ctrlPollTimer.current = setInterval(async () => {
+      if (ctrlSync === "saving") return;
+      try {
+        const [re, rc, rn] = await Promise.all([DB.get("expenses"), DB.get("checklist"), DB.get("notes")]);
+        if (re && re.ts !== ctrlTs.current.exp && Array.isArray(re.data)) { ctrlTs.current.exp = re.ts; setExpenses(re.data); }
+        if (rc && rc.ts !== ctrlTs.current.chk && Array.isArray(rc.data)) { ctrlTs.current.chk = rc.ts; setChecklist(rc.data); }
+        if (rn && rn.ts !== ctrlTs.current.notes && rn.data) { ctrlTs.current.notes = rn.ts; const txt = Array.isArray(rn.data) ? (rn.data[0]||"") : rn.data; if (typeof txt === "string") setNotes(txt); }
+        setCtrlSync("synced");
+      } catch(e) {}
+    }, 7000);
+    return () => clearInterval(ctrlPollTimer.current);
+  }, [ctrlSync]);
+
+  // Debounced save to Supabase
+  useEffect(() => {
+    if (!ctrlMounted.current) { ctrlMounted.current = true; return; }
+    S.set("exp", expenses); S.set("chk", checklist); S.set("notes", notes);
+    if (ctrlSaveTimer.current) clearTimeout(ctrlSaveTimer.current);
+    setCtrlSync("saving");
+    ctrlSaveTimer.current = setTimeout(async () => {
+      try {
+        await Promise.all([DB.set("expenses", expenses), DB.set("checklist", checklist), DB.set("notes", [notes])]);
+        const t = new Date().toISOString();
+        ctrlTs.current = { exp:t, chk:t, notes:t };
+        setCtrlSync("synced");
+      } catch(e) { setCtrlSync("offline"); }
+    }, 1000);
+  }, [expenses, checklist, notes]);
 
   const cats = [{id:"transport",l:"🚇 Transporte",c:C.blue},{id:"food",l:"🍕 Comida",c:C.gold},{id:"tickets",l:"🎟️ Entradas",c:C.purple},{id:"shopping",l:"🛍️ Compras",c:C.pink},{id:"football",l:"⚽ Mundial",c:C.green},{id:"accom",l:"🏠 Alojamiento",c:C.accent},{id:"other",l:"📦 Otros",c:C.muted}];
 
@@ -1406,10 +1498,15 @@ function ControlTab() {
 
   return (
     <div>
-      <div style={{ display:"flex", gap:4, padding:"10px 14px 6px", background:C.bg2 }}>
+      <div style={{ display:"flex", gap:4, padding:"10px 14px 6px", background:C.bg2, alignItems:"center" }}>
         {[["budget","💰 Gastos"],["check","✅ Check"],["notes","📝 Notas"]].map(([k,l]) => (
           <button key={k} onClick={() => setSub(k)} style={{ flex:1, padding:"8px", borderRadius:8, border:`1px solid ${sub===k?C.accent:C.border}`, background:sub===k?`${C.accent}18`:"transparent", color:sub===k?C.accent:C.muted, fontSize:13, fontWeight:700, cursor:"pointer" }}>{l}</button>
         ))}
+      </div>
+      <div style={{ textAlign:"right", padding:"0 14px" }}>
+        <span style={{ fontSize:9, color: ctrlSync==="synced"?C.green:ctrlSync==="saving"?C.gold:ctrlSync==="loading"?C.blue:C.red }}>
+          {ctrlSync==="synced"?"☁️ Sincronizado":ctrlSync==="saving"?"💾 Guardando...":ctrlSync==="loading"?"⏳ Cargando...":"📴 Sin conexión"}
+        </span>
       </div>
       <div style={{ padding:"12px 14px" }}>
         {sub === "budget" && <>
