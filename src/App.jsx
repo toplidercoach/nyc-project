@@ -1902,9 +1902,6 @@ const TABS = [
   { id:"home", icon:"🏠", label:"Inicio" },
   { id:"cal", icon:"📅", label:"Calendario" },
   { id:"wc", icon:"⚽", label:"Mundial" },
-  { id:"movies", icon:"🎬", label:"Pelis" },
-  { id:"events", icon:"🎪", label:"Eventos" },
-  { id:"food", icon:"🍕", label:"Comer" },
   { id:"ai", icon:"🤖", label:"Guía IA" },
   { id:"ctrl", icon:"💰", label:"Control" },
 ];
@@ -1939,9 +1936,6 @@ export default function App() {
       {tab === "home" && <HomeTab />}
       {tab === "cal" && <CalendarTab gps={gps.pos} />}
       {tab === "wc" && <WorldCupTab />}
-      {tab === "movies" && <MoviesTab gps={gps.pos} />}
-      {tab === "events" && <EventsTab gps={gps.pos} />}
-      {tab === "food" && <FoodTab gps={gps.pos} />}
       {tab === "ai" && <AITab />}
       {tab === "ctrl" && <ControlTab />}
 
