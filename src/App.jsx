@@ -262,22 +262,24 @@ function HomeTab() {
     })();
   }, []);
 
-  // Fetch NYC weather + air quality (free API, no key)
+  // Fetch NYC weather (current + hourly + daily) + air quality + Astorga temp
   useEffect(() => {
     (async () => {
       try {
-        const [wRes, aqRes] = await Promise.all([
-          fetch("https://api.open-meteo.com/v1/forecast?latitude=40.71&longitude=-74.01&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=America%2FNew_York&forecast_days=3"),
-          fetch("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=40.71&longitude=-74.01&current=us_aqi,pm2_5")
+        const [wRes, aqRes, astRes] = await Promise.all([
+          fetch("https://api.open-meteo.com/v1/forecast?latitude=40.71&longitude=-74.01&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&hourly=temperature_2m,weather_code,precipitation_probability&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=America%2FNew_York&forecast_days=3"),
+          fetch("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=40.71&longitude=-74.01&current=us_aqi,pm2_5"),
+          fetch("https://api.open-meteo.com/v1/forecast?latitude=42.46&longitude=-6.05&current=temperature_2m,weather_code&timezone=Europe%2FMadrid")
         ]);
-        const [wData, aqData] = await Promise.all([wRes.json(), aqRes.json()]);
-        setWeather({ ...wData, aqi: aqData?.current });
+        const [wData, aqData, astData] = await Promise.all([wRes.json(), aqRes.json(), astRes.json()]);
+        setWeather({ ...wData, aqi: aqData?.current, astorga: astData?.current });
       } catch(e) { console.error("Weather:", e); }
     })();
   }, []);
 
-  const departure = new Date("2026-06-20T12:25:00+02:00");
+  const departure = new Date("2026-06-20T12:05:00+02:00");
   const diff = departure - now;
+  const departed = diff <= 0;
   const days = Math.max(0, Math.floor(diff / 864e5));
   const hours = Math.max(0, Math.floor((diff % 864e5) / 36e5));
   const mins = Math.max(0, Math.floor((diff % 36e5) / 6e4));
@@ -285,51 +287,83 @@ function HomeTab() {
   const nyTime = now.toLocaleTimeString("es-ES", { timeZone:"America/New_York", hour:"2-digit", minute:"2-digit" });
   const esTime = now.toLocaleTimeString("es-ES", { timeZone:"Europe/Madrid", hour:"2-digit", minute:"2-digit" });
 
-  const wCodes = {0:"☀️ Despejado",1:"🌤️ Poco nuboso",2:"⛅ Nuboso",3:"☁️ Cubierto",45:"🌫️ Niebla",51:"🌧️ Llovizna",61:"🌧️ Lluvia",63:"🌧️ Lluvia mod.",65:"🌧️ Lluvia fuerte",80:"🌦️ Chubascos",95:"⛈️ Tormenta"};
+  const wCodes = {0:"☀️ Despejado",1:"🌤️ Poco nuboso",2:"⛅ Nuboso",3:"☁️ Cubierto",45:"🌫️ Niebla",48:"🌫️ Niebla",51:"🌧️ Llovizna",53:"🌧️ Llovizna",55:"🌧️ Llovizna",61:"🌧️ Lluvia",63:"🌧️ Lluvia mod.",65:"🌧️ Lluvia fuerte",80:"🌦️ Chubascos",81:"🌦️ Chubascos",82:"🌦️ Chubascos fuertes",95:"⛈️ Tormenta"};
+  const wEmoji = {0:"☀️",1:"🌤️",2:"⛅",3:"☁️",45:"🌫️",48:"🌫️",51:"🌧️",53:"🌧️",55:"🌧️",61:"🌧️",63:"🌧️",65:"🌧️",80:"🌦️",81:"🌦️",82:"🌦️",95:"⛈️"};
   const aqiLabel = (v) => v <= 50 ? ["🟢 Buena", C.green] : v <= 100 ? ["🟡 Moderada", C.gold] : ["🔴 Mala", C.red];
+
+  // Next 8 hours forecast
+  const hourly = (() => {
+    if (!weather?.hourly?.time) return [];
+    const nowH = new Date().getHours();
+    const startIdx = weather.hourly.time.findIndex(t => new Date(t).getHours() >= nowH && new Date(t).getDate() === new Date().getDate());
+    const idx = startIdx >= 0 ? startIdx : 0;
+    return weather.hourly.time.slice(idx, idx+8).map((t,i) => ({
+      h: new Date(t).getHours(),
+      temp: Math.round(weather.hourly.temperature_2m[idx+i]),
+      code: weather.hourly.weather_code[idx+i],
+      rain: weather.hourly.precipitation_probability[idx+i]
+    }));
+  })();
 
   return (
     <div style={{ padding: "12px 14px" }}>
-      {/* Countdown */}
+      {/* Countdown / clocks */}
       <Card style={{ background:`linear-gradient(135deg, ${C.bg2}, ${C.card})`, textAlign:"center", padding:20 }}>
-        <div style={{ fontSize:14, color:C.muted, marginBottom:6 }}>✈️ DESPEGUE DESDE MADRID</div>
-        {days > 0 ? (
-          <div style={{ display:"flex", justifyContent:"center", gap:10 }}>
-            {[{v:days,l:"DÍAS",c:C.accent},{v:hours,l:"HORAS",c:C.gold},{v:mins,l:"MIN",c:C.blue}].map((x,i)=>(
-              <div key={i} style={{ textAlign:"center", background:`${x.c}12`, borderRadius:12, padding:"10px 16px", border:`1px solid ${x.c}25`, minWidth:65 }}>
-                <div style={{ fontSize:30, fontWeight:900, color:x.c }}>{x.v}</div>
-                <div style={{ fontSize:10, color:C.muted, letterSpacing:1 }}>{x.l}</div>
-              </div>
-            ))}
-          </div>
+        {!departed ? (
+          <>
+            <div style={{ fontSize:14, color:C.muted, marginBottom:6 }}>✈️ DESPEGUE DESDE MADRID</div>
+            <div style={{ display:"flex", justifyContent:"center", gap:10 }}>
+              {[{v:days,l:"DÍAS",c:C.accent},{v:hours,l:"HORAS",c:C.gold},{v:mins,l:"MIN",c:C.blue}].map((x,i)=>(
+                <div key={i} style={{ textAlign:"center", background:`${x.c}12`, borderRadius:12, padding:"10px 16px", border:`1px solid ${x.c}25`, minWidth:65 }}>
+                  <div style={{ fontSize:30, fontWeight:900, color:x.c }}>{x.v}</div>
+                  <div style={{ fontSize:10, color:C.muted, letterSpacing:1 }}>{x.l}</div>
+                </div>
+              ))}
+            </div>
+          </>
         ) : (
-          <div style={{ fontSize:24, fontWeight:900, color:C.green }}>🗽 ¡ESTÁIS EN NUEVA YORK!</div>
+          <div style={{ fontSize:20, fontWeight:900, color:C.green, marginBottom:4 }}>🗽 ¡DE VIAJE EN NUEVA YORK!</div>
         )}
-        <div style={{ display:"flex", justifyContent:"center", gap:16, marginTop:10 }}>
-          <div><span style={{ fontSize:11, color:C.muted }}>🇪🇸 España</span><div style={{ fontSize:18, fontWeight:700 }}>{esTime}</div></div>
+        <div style={{ display:"flex", justifyContent:"center", gap:16, marginTop:14 }}>
+          <div><span style={{ fontSize:12, color:C.muted }}>🇪🇸 España</span><div style={{ fontSize:departed?26:18, fontWeight:800 }}>{esTime}</div></div>
           <div style={{ color:C.muted, alignSelf:"center" }}>→</div>
-          <div><span style={{ fontSize:11, color:C.muted }}>🗽 Nueva York</span><div style={{ fontSize:18, fontWeight:700, color:C.accent }}>{nyTime}</div></div>
+          <div><span style={{ fontSize:12, color:C.muted }}>🗽 Nueva York</span><div style={{ fontSize:departed?26:18, fontWeight:800, color:C.accent }}>{nyTime}</div></div>
         </div>
         <div style={{ fontSize:11, color:C.muted, marginTop:4 }}>6 horas de diferencia</div>
       </Card>
 
-      {/* Weather + Air Quality */}
+      {/* Weather */}
       {weather?.current && (
         <Card>
-          <div style={{ fontSize:15, fontWeight:700, marginBottom:8 }}>🌡️ Tiempo en Nueva York ahora</div>
-          <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:8 }}>
+          <div style={{ fontSize:15, fontWeight:700, marginBottom:8, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <span>🌡️ Tiempo en Nueva York</span>
+            {weather.astorga && <span style={{ fontSize:11, color:C.muted, fontWeight:500 }}>🏡 Astorga: <b style={{ color:C.text }}>{Math.round(weather.astorga.temperature_2m)}°</b> {wEmoji[weather.astorga.weather_code]||""}</span>}
+          </div>
+          <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:10 }}>
             <div style={{ fontSize:36, fontWeight:900, color:C.accent }}>{Math.round(weather.current.temperature_2m)}°C</div>
             <div>
               <div style={{ fontSize:14, fontWeight:600 }}>{wCodes[weather.current.weather_code] || "🌤️"}</div>
-              <div style={{ fontSize:12, color:C.muted }}>Sensación: {Math.round(weather.current.apparent_temperature)}°C</div>
-              <div style={{ fontSize:12, color:C.muted }}>Humedad: {weather.current.relative_humidity_2m}% · Viento: {Math.round(weather.current.wind_speed_10m)}km/h</div>
+              <div style={{ fontSize:12, color:C.muted }}>Sensación {Math.round(weather.current.apparent_temperature)}° · Humedad {weather.current.relative_humidity_2m}% · Viento {Math.round(weather.current.wind_speed_10m)}km/h</div>
             </div>
           </div>
+          {/* Hourly forecast */}
+          {hourly.length > 0 && (
+            <div style={{ display:"flex", gap:4, overflowX:"auto", paddingBottom:4, marginBottom:8 }}>
+              {hourly.map((h,i) => (
+                <div key={i} style={{ flexShrink:0, minWidth:46, textAlign:"center", padding:"6px 4px", background:`${C.blue}08`, borderRadius:8, border:`1px solid ${C.border}` }}>
+                  <div style={{ fontSize:10, color:C.muted }}>{h.h}h</div>
+                  <div style={{ fontSize:15 }}>{wEmoji[h.code]||"🌤️"}</div>
+                  <div style={{ fontSize:13, fontWeight:700 }}>{h.temp}°</div>
+                  {h.rain > 15 && <div style={{ fontSize:8, color:C.blue }}>💧{h.rain}%</div>}
+                </div>
+              ))}
+            </div>
+          )}
           {/* 3-day forecast */}
           {weather.daily && (
             <div style={{ display:"flex", gap:6 }}>
               {weather.daily.time.map((d,i) => (
-                <div key={i} style={{ flex:1, textAlign:"center", padding:"6px 4px", background:`${C.blue}08`, borderRadius:8, border:`1px solid ${C.border}` }}>
+                <div key={i} style={{ flex:1, textAlign:"center", padding:"6px 4px", background:`${C.bg2}`, borderRadius:8, border:`1px solid ${C.border}` }}>
                   <div style={{ fontSize:10, color:C.muted }}>{new Date(d).toLocaleDateString("es-ES",{weekday:"short"})}</div>
                   <div style={{ fontSize:14, fontWeight:700 }}>{Math.round(weather.daily.temperature_2m_max[i])}°</div>
                   <div style={{ fontSize:10, color:C.blue }}>{Math.round(weather.daily.temperature_2m_min[i])}°</div>
@@ -360,7 +394,7 @@ function HomeTab() {
 
       <Card>
         <div style={{ fontSize:15, fontWeight:700, marginBottom:6 }}>✈️ Vuelos · <span style={{ color:C.accent }}>KRLGF</span></div>
-        {[["IDA — 20 JUN","IB0211: MAD → JFK","Sale 12:25 · Llega 14:45 T8",C.blue],["VUELTA — 01 JUL","IB0212: JFK → MAD","Sale 16:45 T8 · Llega 02 JUL 06:00",C.accent]].map(([t,r,d,c],i)=>(
+        {[["IDA — 20 JUN","IB0211: MAD → JFK","Embarque 11:35 · Sale 12:05 (T4S) · Llega 14:45 (T8)",C.blue],["VUELTA — 01 JUL","IB0212: JFK → MAD","Sale 16:45 (T8) · Llega 02 JUL 06:00",C.accent]].map(([t,r,d,c],i)=>(
           <div key={i} style={{ background:`${c}08`, borderRadius:8, padding:10, marginBottom:i===0?6:0, border:`1px solid ${c}18` }}>
             <div style={{ fontSize:11, fontWeight:700, color:c }}>{t}</div>
             <div style={{ fontSize:14, fontWeight:600, marginTop:1 }}>{r}</div>
@@ -368,26 +402,84 @@ function HomeTab() {
           </div>
         ))}
       </Card>
+
       <Card>
         <div style={{ fontSize:15, fontWeight:700, marginBottom:4 }}>🏠 Airbnb · Jersey City</div>
         <div style={{ fontSize:14 }}>65 Corbin Ave, NJ 07306</div>
         <div style={{ fontSize:12, color:C.muted }}>Anfitrión: Faria · Check-out: 1 jul 10:00</div>
-        <div style={{ fontSize:12, padding:"4px 8px", background:`${C.gold}12`, borderRadius:6, color:C.gold, marginTop:4, display:"inline-block" }}>🚇 PATH: Journal Sq → Manhattan ~20 min</div>
-      </Card>
-      <Card>
-        <div style={{ fontSize:15, fontWeight:700, marginBottom:4 }}>🛡️ Seguro IMAWAY · 250002H5</div>
-        <div style={{ fontSize:13, color:C.muted }}>Médico: <b style={{color:C.green}}>6M €</b> · Anulación: <b>5.000 €</b> · Total: <b>392,87 €</b></div>
-        <div style={{ fontSize:12, color:C.muted, marginTop:3 }}>📞 +34 913907318 · 💬 WA: 913907390</div>
-      </Card>
-      <Card>
-        <div style={{ fontSize:15, fontWeight:700, marginBottom:4 }}>💡 Imprescindible</div>
-        <div style={{ fontSize:13, color:C.muted, lineHeight:1.8 }}>
-          🛂 <b style={{color:C.text}}>ESTA:</b> 14$/persona · 🔌 <b style={{color:C.text}}>Enchufe:</b> Tipo A/B<br/>
-          💳 <b style={{color:C.text}}>Revolut/N26</b> sin comisiones · Propina 15-20%<br/>
-          🚇 <b style={{color:C.text}}>MetroCard 7 días:</b> $34 · 🌡️ 25-32°C + humedad
+        <div style={{ display:"flex", gap:6, marginTop:6, flexWrap:"wrap" }}>
+          <a href="https://www.google.com/maps/search/?api=1&query=65+Corbin+Ave+Jersey+City+NJ+07306" target="_blank" rel="noopener" style={{ fontSize:12, padding:"5px 10px", background:`${C.blue}15`, borderRadius:6, color:C.blue, textDecoration:"none", fontWeight:600 }}>🗺️ Ver en mapa</a>
+          <span style={{ fontSize:12, padding:"5px 10px", background:`${C.gold}12`, borderRadius:6, color:C.gold }}>🚇 PATH Journal Sq → Manhattan ~20 min</span>
         </div>
       </Card>
+
+      {/* Documentación */}
+      <DocsCard />
     </div>
+  );
+}
+
+// Documents section (OneDrive links + uploaded files, shared via Supabase)
+function DocsCard() {
+  const [docs, setDocs] = useState(() => { const d = S.get("docs"); return Array.isArray(d) ? d : []; });
+  const [linkInput, setLinkInput] = useState("");
+  const [nameInput, setNameInput] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const docTs = useRef(null);
+  const docMounted = useRef(false);
+  const fileRef = useRef(null);
+
+  useEffect(() => {
+    (async () => {
+      const r = await DB.get("docs");
+      if (r && Array.isArray(r.data)) { setDocs(r.data); S.set("docs", r.data); docTs.current = r.ts; }
+    })();
+    const poll = setInterval(async () => {
+      const r = await DB.get("docs");
+      if (r && r.ts !== docTs.current && Array.isArray(r.data)) { docTs.current = r.ts; setDocs(r.data); S.set("docs", r.data); }
+    }, 10000);
+    return () => clearInterval(poll);
+  }, []);
+
+  useEffect(() => {
+    if (!docMounted.current) { docMounted.current = true; return; }
+    S.set("docs", docs);
+    DB.set("docs", docs).then(() => { docTs.current = new Date().toISOString(); });
+  }, [docs]);
+
+  const addLink = () => {
+    const u = linkInput.trim(); if (!u) return;
+    const url = u.startsWith("http") ? u : `https://${u}`;
+    setDocs([...docs, { name: nameInput.trim() || "🔗 Enlace", url, type:"link" }]);
+    setLinkInput(""); setNameInput("");
+  };
+  const uploadDoc = async (file) => {
+    setUploading(true);
+    const url = await DB.uploadFile(file);
+    if (url) { const isImg = (file.type||"").startsWith("image/"); setDocs([...docs, { name:file.name||"Documento", url, type:isImg?"image":"pdf" }]); }
+    setUploading(false);
+  };
+
+  return (
+    <Card>
+      <div style={{ fontSize:15, fontWeight:700, marginBottom:8 }}>📁 Documentación del viaje</div>
+      {docs.length === 0 && <div style={{ fontSize:12, color:C.muted, marginBottom:8 }}>Guarda aquí billetes, reservas, seguro, pasaportes... Compartido con los 5.</div>}
+      {docs.map((d,i) => (
+        <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 8px", background:C.bg2, borderRadius:8, marginBottom:4, border:`1px solid ${C.border}` }}>
+          {d.type === "image" ? <img src={d.url} alt="" style={{ width:34, height:34, borderRadius:5, objectFit:"cover" }} /> : <span style={{ fontSize:22 }}>{d.type === "pdf" ? "📄" : "🔗"}</span>}
+          <a href={d.url} target="_blank" rel="noopener" style={{ fontSize:13, flex:1, color:C.text, textDecoration:"none" }}>{d.name}</a>
+          <a href={d.url} target="_blank" rel="noopener" style={{ fontSize:11, color:C.blue, textDecoration:"none" }}>Abrir ↗</a>
+          <button onClick={() => setDocs(docs.filter((_,j)=>j!==i))} style={{ background:"none", border:"none", color:C.red, fontSize:12, cursor:"pointer", opacity:0.5 }}>✕</button>
+        </div>
+      ))}
+      <button onClick={() => fileRef.current?.click()} disabled={uploading} style={{ width:"100%", padding:"10px", borderRadius:8, border:`1px solid ${C.purple}40`, background:`${C.purple}12`, color:C.purple, fontSize:13, fontWeight:700, cursor:"pointer", marginTop:6 }}>{uploading ? "⏳ Subiendo..." : "📎 Subir PDF / foto"}</button>
+      <input ref={fileRef} type="file" accept="image/*,application/pdf" style={{ display:"none" }} onChange={e => { if (e.target.files?.[0]) uploadDoc(e.target.files[0]); e.target.value=""; }} />
+      <div style={{ display:"flex", gap:4, marginTop:6 }}>
+        <input style={{ ...inputStyle, width:"35%", fontSize:12 }} placeholder="Nombre" value={nameInput} onChange={e => setNameInput(e.target.value)} />
+        <input style={{ ...inputStyle, flex:1, fontSize:12 }} placeholder="Link OneDrive/Drive..." value={linkInput} onChange={e => setLinkInput(e.target.value)} onKeyDown={e => e.key === "Enter" && addLink()} />
+        <button onClick={addLink} style={{ padding:"9px 14px", borderRadius:8, border:"none", background:C.purple, color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>+</button>
+      </div>
+    </Card>
   );
 }
 
