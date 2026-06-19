@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { TRIVIA_Q } from "./trivia";
 
 // ═══════════════════════════════════════════
 // SUPABASE CONFIG
@@ -1976,33 +1977,6 @@ function WorldCupTab() {
 // ═══════════════════════════════════════════
 // 🎮 TRIVIAL NYC
 // ═══════════════════════════════════════════
-const TRIVIA_Q = [
-  { q:"¿Cuántos distritos (boroughs) tiene Nueva York?", o:["3","5","7","10"], a:1, cat:"📍 Básico" },
-  { q:"¿Qué isla alberga la Estatua de la Libertad?", o:["Ellis Island","Liberty Island","Roosevelt Island","Staten Island"], a:1, cat:"🗽 Monumentos" },
-  { q:"¿Qué país regaló la Estatua de la Libertad a EE.UU.?", o:["Reino Unido","España","Francia","Italia"], a:2, cat:"🗽 Monumentos" },
-  { q:"¿Cómo se llama el parque más famoso de Manhattan?", o:["Hyde Park","Central Park","Prospect Park","Bryant Park"], a:1, cat:"🌳 Lugares" },
-  { q:"¿Qué rascacielos fue el más alto del mundo hasta 1970?", o:["Chrysler Building","Empire State","One WTC","Flatiron"], a:1, cat:"🏙️ Edificios" },
-  { q:"¿En qué avenida están las tiendas de lujo más famosas?", o:["Broadway","5ª Avenida","Wall Street","Park Avenue"], a:1, cat:"🛍️ Cultura" },
-  { q:"¿Cómo se llama la estación de tren más grande de NY?", o:["Penn Station","Grand Central","Union Station","Times Sq"], a:1, cat:"🚉 Transporte" },
-  { q:"¿Qué puente une Manhattan con Brooklyn y es el más famoso?", o:["Puente Brooklyn","Puente Manhattan","Williamsburg","Verrazzano"], a:0, cat:"🌉 Lugares" },
-  { q:"¿En qué barrio está el barrio chino (Chinatown)?", o:["Brooklyn","Bronx","Bajo Manhattan","Queens"], a:2, cat:"📍 Barrios" },
-  { q:"¿Qué famoso musical sobre un padre fundador triunfa en Broadway?", o:["Cats","Hamilton","Wicked","Chicago"], a:1, cat:"🎭 Cultura" },
-  { q:"¿Cómo se llama el museo de arte más grande de NY?", o:["MoMA","Guggenheim","MET","Whitney"], a:2, cat:"🎨 Museos" },
-  { q:"¿Qué plaza es famosa por sus pantallas y la fiesta de Nochevieja?", o:["Union Square","Times Square","Herald Square","Madison Sq"], a:1, cat:"🏙️ Lugares" },
-  { q:"¿Qué equipo de béisbol juega en el Bronx?", o:["Mets","Yankees","Dodgers","Red Sox"], a:1, cat:"⚾ Deporte" },
-  { q:"¿En qué calle está la Bolsa de Nueva York?", o:["Broadway","Wall Street","Madison Ave","Canal St"], a:1, cat:"💰 Cultura" },
-  { q:"¿Cómo se llaman los típicos taxis amarillos?", o:["Cabs","Ubers","Trolleys","Carriages"], a:0, cat:"🚕 Curiosidades" },
-  { q:"¿Qué edificio aparece en la peli de King Kong subiendo por él?", o:["Chrysler","Empire State","Woolworth","Flatiron"], a:1, cat:"🎬 Cine" },
-  { q:"¿Qué memorial recuerda los atentados de 2001?", o:["Liberty Memorial","9/11 Memorial","Freedom Park","Ground Hall"], a:1, cat:"🕊️ Historia" },
-  { q:"¿Qué famoso barrio es el centro del teatro en NY?", o:["SoHo","Broadway/Theater District","Tribeca","Harlem"], a:1, cat:"🎭 Barrios" },
-  { q:"¿Cómo se llama el sistema de metro de NY popularmente?", o:["The Tube","The Subway","The Metro","The Underground"], a:1, cat:"🚇 Transporte" },
-  { q:"¿Qué comida rápida es típica de los puestos callejeros de NY?", o:["Tacos","Hot dogs","Sushi","Paella"], a:1, cat:"🌭 Comida" },
-  { q:"¿En qué río está la Estatua de la Libertad?", o:["Río Hudson","Bahía de NY","Río Este","Río Harlem"], a:1, cat:"🗽 Geografía" },
-  { q:"¿Qué famoso edificio triangular hay en la 5ª con Broadway?", o:["Flatiron","Chrysler","Woolworth","Seagram"], a:0, cat:"🏙️ Edificios" },
-  { q:"¿Qué barrio es famoso por la cultura afroamericana y el jazz?", o:["Bronx","Harlem","Queens","SoHo"], a:1, cat:"🎷 Cultura" },
-  { q:"¿Cuál es el apodo de Nueva York?", o:["La Ciudad del Amor","La Gran Manzana","La Ciudad Eterna","La Ciudad Blanca"], a:1, cat:"🍎 Curiosidades" },
-  { q:"¿Qué tienda de juguetes gigante es famosa en la 5ª Avenida?", o:["Toys R Us","FAO Schwarz","Hamleys","Lego Store"], a:1, cat:"🧸 Tiendas" },
-];
 
 function TriviaTab() {
   const WHO = [
